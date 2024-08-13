@@ -100,6 +100,8 @@ class FileDropApp(QMainWindow):
         self.setMinimumSize(500, 500)
         self.added_paths = {}  # Tracks currently displayed items
         self.base_paths = []  # Stores initially dropped paths
+        self.current_folder = None
+        self.nav_stack = []
 
         # Set up the UI
         central_widget = QWidget()
@@ -122,6 +124,7 @@ class FileDropApp(QMainWindow):
 
         self.file_list = QListWidget()
         self.file_list.setIconSize(QSize(24, 24))
+        self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -138,11 +141,12 @@ class FileDropApp(QMainWindow):
 
     def add_files(self, paths):
         """Add files and folders to the list."""
+        self.nav_stack = []
         self.base_paths = [path for path in paths if os.path.exists(path)]
         self.show_initial_items()
 
     def show_initial_items(self):
-        """Show the initially added files and folders."""
+        """Show the initially added files and folders, with folders first."""
         self.file_list.clear()
         self.added_paths.clear()
         folders = [path for path in self.base_paths if os.path.isdir(path)]
@@ -157,12 +161,67 @@ class FileDropApp(QMainWindow):
             item = FileListItem(path)
             self.file_list.addItem(item)
             self.added_paths[path] = item
+        self.current_folder = None
+
+    def show_folder(self, folder):
+        """Load the immediate children of the given folder."""
+        self.current_folder = folder
+        self.file_list.clear()
+        self.added_paths.clear()
+        if self.nav_stack:
+            back_item = QListWidgetItem("..")
+            back_item.is_dir = True
+            back_item.path = None
+            back_item.setFlags(back_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.file_list.addItem(back_item)
+        try:
+            entries = sorted(os.listdir(folder))
+        except Exception as e:
+            print(f"Error opening folder: {e}")
+            return
+        dirs = []
+        files = []
+        for entry in entries:
+            full_path = os.path.join(folder, entry)
+            if os.path.isdir(full_path):
+                dirs.append(full_path)
+            else:
+                files.append(full_path)
+        dirs.sort()
+        files.sort()
+        for full_path in dirs:
+            item = FileListItem(full_path)
+            self.file_list.addItem(item)
+            self.added_paths[full_path] = item
+        for full_path in files:
+            item = FileListItem(full_path)
+            self.file_list.addItem(item)
+            self.added_paths[full_path] = item
 
     def clear_list(self):
         """Clear the file list and reset state."""
         self.file_list.clear()
         self.added_paths.clear()
         self.base_paths = []
+        self.current_folder = None
+        self.nav_stack = []
+
+    def on_item_double_clicked(self, item):
+        """Navigate into folder or go back if '..' is clicked."""
+        if item.text() == "..":
+            if self.nav_stack:
+                prev_state = self.nav_stack.pop()
+                if isinstance(prev_state, list):
+                    self.show_initial_items()
+                else:
+                    self.show_folder(prev_state)
+            return
+        if item.is_dir:
+            if self.current_folder:
+                self.nav_stack.append(self.current_folder)
+            else:
+                self.nav_stack.append(self.base_paths)
+            self.show_folder(item.path)
 
 
 if __name__ == "__main__":
