@@ -130,6 +130,9 @@ class FileDropApp(QMainWindow):
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
+        self.generate_button = QPushButton("Generate")
+        self.generate_button.clicked.connect(self.generate_paths_text)
+        button_layout.addWidget(self.generate_button)
         self.clear_button = QPushButton("Clear List")
         self.clear_button.clicked.connect(self.clear_list)
         button_layout.addWidget(self.clear_button)
@@ -221,6 +224,17 @@ class FileDropApp(QMainWindow):
             selected_item = self.file_list.currentItem()
             if selected_item:
                 self.on_item_double_clicked(selected_item)
+        elif event.key() == Qt.Key.Key_Right:
+            selected_item = self.file_list.currentItem()
+            if selected_item and selected_item.is_dir and selected_item.text() != "..":
+                self.on_item_double_clicked(selected_item)
+        elif event.key() == Qt.Key.Key_Left:
+            if self.nav_stack:
+                prev_state = self.nav_stack.pop()
+                if isinstance(prev_state, list):
+                    self.show_initial_items()
+                else:
+                    self.show_folder(prev_state)
         else:
             QListWidget.keyPressEvent(self.file_list, event)
 
@@ -251,6 +265,52 @@ class FileDropApp(QMainWindow):
             else:
                 self.nav_stack.append(self.base_paths)
             self.show_folder(item.path)
+
+    def get_all_included_files(self):
+        """Collect all included file paths recursively, excluding deleted ones."""
+        all_files = set()
+        for path in self.base_paths:
+            if path not in self.deleted_paths:
+                if os.path.isfile(path):
+                    all_files.add(path)
+                elif os.path.isdir(path):
+                    self._collect_files(path, all_files)
+        return sorted(all_files)
+
+    def _collect_files(self, folder, all_files):
+        """Helper method to collect file paths recursively."""
+        try:
+            entries = os.listdir(folder)
+        except Exception as e:
+            print(f"Error reading folder {folder}: {e}")
+            return
+        for entry in entries:
+            full_path = os.path.join(folder, entry)
+            if full_path not in self.deleted_paths:
+                if os.path.isfile(full_path):
+                    all_files.add(full_path)
+                elif os.path.isdir(full_path):
+                    self._collect_files(full_path, all_files)
+
+    def generate_paths_text(self):
+        """Generate text of all included file contents and copy to clipboard."""
+        files = self.get_all_included_files()
+        output = []
+        for file_path in files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                header = (
+                    f"############## {file_path.replace(os.sep, '/')} ##############"
+                )
+                output.append(header)
+                output.append(content)
+                output.append("")
+            except Exception as e:
+                print(f"Error reading file {file_path}: {e}")
+        text = "\n".join(output)
+        QApplication.clipboard().setText(text)
+        print("File contents copied to clipboard.")
 
 
 if __name__ == "__main__":
