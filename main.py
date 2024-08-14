@@ -99,6 +99,7 @@ class FileDropApp(QMainWindow):
         self.setWindowTitle("File Drop Interface")
         self.setMinimumSize(500, 500)
         self.added_paths = {}  # Tracks currently displayed items
+        self.deleted_paths = set()  # Tracks deleted items
         self.base_paths = []  # Stores initially dropped paths
         self.current_folder = None
         self.nav_stack = []
@@ -125,6 +126,7 @@ class FileDropApp(QMainWindow):
         self.file_list = QListWidget()
         self.file_list.setIconSize(QSize(24, 24))
         self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
+        self.file_list.keyPressEvent = self.list_key_press_event
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -141,6 +143,7 @@ class FileDropApp(QMainWindow):
 
     def add_files(self, paths):
         """Add files and folders to the list."""
+        self.deleted_paths.clear()
         self.nav_stack = []
         self.base_paths = [path for path in paths if os.path.exists(path)]
         self.show_initial_items()
@@ -154,13 +157,15 @@ class FileDropApp(QMainWindow):
         folders.sort()
         files.sort()
         for path in folders:
-            item = FileListItem(path)
-            self.file_list.addItem(item)
-            self.added_paths[path] = item
+            if path not in self.deleted_paths:
+                item = FileListItem(path)
+                self.file_list.addItem(item)
+                self.added_paths[path] = item
         for path in files:
-            item = FileListItem(path)
-            self.file_list.addItem(item)
-            self.added_paths[path] = item
+            if path not in self.deleted_paths:
+                item = FileListItem(path)
+                self.file_list.addItem(item)
+                self.added_paths[path] = item
         self.current_folder = None
 
     def show_folder(self, folder):
@@ -183,10 +188,11 @@ class FileDropApp(QMainWindow):
         files = []
         for entry in entries:
             full_path = os.path.join(folder, entry)
-            if os.path.isdir(full_path):
-                dirs.append(full_path)
-            else:
-                files.append(full_path)
+            if full_path not in self.deleted_paths:
+                if os.path.isdir(full_path):
+                    dirs.append(full_path)
+                else:
+                    files.append(full_path)
         dirs.sort()
         files.sort()
         for full_path in dirs:
@@ -202,9 +208,32 @@ class FileDropApp(QMainWindow):
         """Clear the file list and reset state."""
         self.file_list.clear()
         self.added_paths.clear()
+        self.deleted_paths.clear()
         self.base_paths = []
         self.current_folder = None
         self.nav_stack = []
+
+    def list_key_press_event(self, event: QKeyEvent):
+        """Handle key press events in the list widget."""
+        if event.key() == Qt.Key.Key_Delete:
+            self.remove_selected_items()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            selected_item = self.file_list.currentItem()
+            if selected_item:
+                self.on_item_double_clicked(selected_item)
+        else:
+            QListWidget.keyPressEvent(self.file_list, event)
+
+    def remove_selected_items(self):
+        """Remove selected items from the list."""
+        selected_items = self.file_list.selectedItems()[::-1]
+        for item in selected_items:
+            if item.path is not None:
+                self.deleted_paths.add(item.path)
+                if item.path in self.added_paths:
+                    del self.added_paths[item.path]
+                row = self.file_list.row(item)
+                self.file_list.takeItem(row)
 
     def on_item_double_clicked(self, item):
         """Navigate into folder or go back if '..' is clicked."""
