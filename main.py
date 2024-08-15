@@ -74,14 +74,19 @@ class DropZone(QFrame):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
+            self.setStyleSheet(
+                "QFrame { background-color: #d0e7f7; border: 2px dashed #308cc6; }"
+            )
             event.accept()
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event):
+        self.setStyleSheet("")
         event.accept()
 
     def dropEvent(self, event):
+        self.setStyleSheet("")
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             paths = [url.toLocalFile() for url in urls]
@@ -107,6 +112,15 @@ class FileDropApp(QMainWindow):
         # Set up the UI
         central_widget = QWidget()
         main_layout = QVBoxLayout(central_widget)
+        self.setStyleSheet("""
+            QMainWindow { background-color: #f5f5f7; font-family: "Liga Comic Mono", monospace; }
+            QListWidget { background-color: white; border-radius: 5px; border: 1px solid #e0e0e0; padding: 5px; }
+            QListWidget::item { padding: 3px; border-bottom: 1px solid #f0f0f0; }
+            QListWidget::item:selected { background-color: #e7f0fa; color: #000000; }
+            QPushButton { background-color: #4a86e8; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }
+            QPushButton:hover { background-color: #3a76d8; }
+            QPushButton:pressed { background-color: #2a66c8; }
+        """)
 
         header_label = QLabel("File & Folder Drop Zone")
         header_font = QFont()
@@ -120,7 +134,7 @@ class FileDropApp(QMainWindow):
         list_header = QLabel("Files and Folders:")
         list_header_font = QFont()
         list_header_font.setPointSize(12)
-        list_header_font.setBold(True)
+        list_header_font.setBold(list_header_font)
         list_header.setFont(list_header_font)
 
         self.file_list = QListWidget()
