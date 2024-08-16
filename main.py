@@ -134,7 +134,7 @@ class FileDropApp(QMainWindow):
         list_header = QLabel("Files and Folders:")
         list_header_font = QFont()
         list_header_font.setPointSize(12)
-        list_header_font.setBold(list_header_font)
+        list_header_font.setBold(True)
         list_header.setFont(list_header_font)
 
         self.file_list = QListWidget()
