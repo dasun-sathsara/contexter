@@ -84,7 +84,12 @@ class FileDropApp(QMainWindow):
         """Add files and folders to the list."""
         self.deleted_paths.clear()
         self.nav_stack = []
-        self.base_paths = [path for path in paths if os.path.exists(path)]
+
+        # Add new paths to the existing base_paths rather than replacing them
+        for path in paths:
+            if os.path.exists(path) and path not in self.base_paths:
+                self.base_paths.append(path)
+
         self.show_initial_items()
 
     def show_initial_items(self):
