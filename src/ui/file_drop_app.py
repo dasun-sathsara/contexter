@@ -8,9 +8,8 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QHBoxLayout,
     QPushButton,
-    QSize,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QKeyEvent, QColor, QPalette
 from PyQt6.QtWidgets import QApplication
 
