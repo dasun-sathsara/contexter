@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QHBoxLayout,
     QPushButton,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QKeyEvent, QColor, QPalette
@@ -15,7 +16,11 @@ from PyQt6.QtWidgets import QApplication
 
 from src.ui.drop_zone import DropZone
 from src.models.file_list_item import FileListItem
-from src.utils.file_operations import get_all_files_recursive, merge_file_contents
+from src.utils.file_operations import (
+    get_all_files_recursive,
+    merge_file_contents,
+    is_text_file,
+)
 
 
 class FileDropApp(QMainWindow):
@@ -30,6 +35,7 @@ class FileDropApp(QMainWindow):
         self.base_paths = []  # Stores initially dropped paths
         self.current_folder = None
         self.nav_stack = []
+        self.text_only = True  # Default to showing only text files
 
         # Set up the UI
         central_widget = QWidget()
@@ -52,6 +58,14 @@ class FileDropApp(QMainWindow):
         header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.drop_zone = DropZone(self.add_files)
+
+        # Create filter options layout
+        filter_layout = QHBoxLayout()
+        self.text_only_checkbox = QCheckBox("Show text files only")
+        self.text_only_checkbox.setChecked(self.text_only)
+        self.text_only_checkbox.stateChanged.connect(self.on_text_only_changed)
+        filter_layout.addWidget(self.text_only_checkbox)
+        filter_layout.addStretch()
 
         list_header = QLabel("Files and Folders:")
         list_header_font = QFont()
@@ -76,9 +90,18 @@ class FileDropApp(QMainWindow):
         main_layout.addWidget(header_label)
         main_layout.addWidget(self.drop_zone)
         main_layout.addWidget(list_header)
+        main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.file_list)
         main_layout.addLayout(button_layout)
         self.setCentralWidget(central_widget)
+
+    def on_text_only_changed(self, state):
+        """Handle change in the text-only checkbox state."""
+        self.text_only = state == Qt.CheckState.Checked.value
+        if self.current_folder is not None:
+            self.show_folder(self.current_folder)
+        else:
+            self.show_initial_items()
 
     def add_files(self, paths):
         """Add files and folders to the list."""
@@ -98,6 +121,11 @@ class FileDropApp(QMainWindow):
         self.added_paths.clear()
         folders = [path for path in self.base_paths if os.path.isdir(path)]
         files = [path for path in self.base_paths if not os.path.isdir(path)]
+
+        # Filter out non-text files if text_only is enabled
+        if self.text_only:
+            files = [path for path in files if is_text_file(path)]
+
         folders.sort()
         files.sort()
         for path in folders:
@@ -136,6 +164,9 @@ class FileDropApp(QMainWindow):
                 if os.path.isdir(full_path):
                     dirs.append(full_path)
                 else:
+                    # Skip non-text files if text_only is enabled
+                    if self.text_only and not is_text_file(full_path):
+                        continue
                     files.append(full_path)
         dirs.sort()
         files.sort()
@@ -209,7 +240,9 @@ class FileDropApp(QMainWindow):
 
     def get_all_included_files(self):
         """Collect all included file paths recursively, excluding deleted ones."""
-        return get_all_files_recursive(self.base_paths, self.deleted_paths)
+        return get_all_files_recursive(
+            self.base_paths, self.deleted_paths, self.text_only
+        )
 
     def generate_paths_text(self):
         """Generate text of all included file contents and copy to clipboard."""
