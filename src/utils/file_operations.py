@@ -77,6 +77,46 @@ def is_text_file(file_path):
         return False
 
 
+def is_folder_empty(folder_path, text_only=False, deleted_paths=None):
+    """
+    Check if a folder is empty or contains only empty subfolders.
+
+    Args:
+        folder_path (str): Path to the folder to check
+        text_only (bool): If True, consider a folder empty if it contains no text files
+        deleted_paths (set): Set of paths that have been deleted/excluded
+
+    Returns:
+        bool: True if the folder is empty (or has only empty subfolders), False otherwise
+    """
+    if deleted_paths is None:
+        deleted_paths = set()
+
+    try:
+        entries = os.listdir(folder_path)
+    except Exception:
+        # If we can't read the folder, consider it empty
+        return True
+
+    for entry in entries:
+        full_path = os.path.join(folder_path, entry)
+
+        # Skip entries that are in deleted_paths
+        if full_path in deleted_paths:
+            continue
+
+        if os.path.isfile(full_path):
+            # If text_only is True, only consider text files
+            if not text_only or is_text_file(full_path):
+                return False  # Found a file, folder is not empty
+        elif os.path.isdir(full_path):
+            # Recursive check for subfolders
+            if not is_folder_empty(full_path, text_only, deleted_paths):
+                return False  # Found a non-empty subfolder
+
+    return True  # No files or non-empty subfolders found
+
+
 def get_all_files_recursive(base_paths, deleted_paths, text_only=False):
     """
     Collect all included file paths recursively, excluding deleted ones.

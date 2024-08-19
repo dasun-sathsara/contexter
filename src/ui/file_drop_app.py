@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QKeyEvent, QColor, QPalette
+from PyQt6.QtGui import QFont, QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
 from src.ui.drop_zone import DropZone
@@ -20,6 +20,7 @@ from src.utils.file_operations import (
     get_all_files_recursive,
     merge_file_contents,
     is_text_file,
+    is_folder_empty,
 )
 
 
@@ -36,6 +37,7 @@ class FileDropApp(QMainWindow):
         self.current_folder = None
         self.nav_stack = []
         self.text_only = True  # Default to showing only text files
+        self.hide_empty_folders = True  # Default to hiding empty folders
 
         # Set up the UI
         central_widget = QWidget()
@@ -65,6 +67,12 @@ class FileDropApp(QMainWindow):
         self.text_only_checkbox.setChecked(self.text_only)
         self.text_only_checkbox.stateChanged.connect(self.on_text_only_changed)
         filter_layout.addWidget(self.text_only_checkbox)
+        
+        self.hide_empty_folders_checkbox = QCheckBox("Hide empty folders")
+        self.hide_empty_folders_checkbox.setChecked(True)  # Default to hiding empty folders
+        self.hide_empty_folders_checkbox.stateChanged.connect(self.on_hide_empty_folders_changed)
+        filter_layout.addWidget(self.hide_empty_folders_checkbox)
+        
         filter_layout.addStretch()
 
         list_header = QLabel("Files and Folders:")
@@ -103,6 +111,14 @@ class FileDropApp(QMainWindow):
         else:
             self.show_initial_items()
 
+    def on_hide_empty_folders_changed(self, state):
+        """Handle change in the hide-empty-folders checkbox state."""
+        self.hide_empty_folders = state == Qt.CheckState.Checked.value
+        if self.current_folder is not None:
+            self.show_folder(self.current_folder)
+        else:
+            self.show_initial_items()
+
     def add_files(self, paths):
         """Add files and folders to the list."""
         self.deleted_paths.clear()
@@ -125,6 +141,13 @@ class FileDropApp(QMainWindow):
         # Filter out non-text files if text_only is enabled
         if self.text_only:
             files = [path for path in files if is_text_file(path)]
+            
+        # Filter out empty folders if hide_empty_folders is enabled
+        if self.hide_empty_folders:
+            folders = [
+                path for path in folders 
+                if not is_folder_empty(path, self.text_only, self.deleted_paths)
+            ]
 
         folders.sort()
         files.sort()
@@ -162,6 +185,9 @@ class FileDropApp(QMainWindow):
             full_path = os.path.join(folder, entry)
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
+                    # Skip empty folders if hide_empty_folders is enabled
+                    if self.hide_empty_folders and is_folder_empty(full_path, self.text_only, self.deleted_paths):
+                        continue
                     dirs.append(full_path)
                 else:
                     # Skip non-text files if text_only is enabled
