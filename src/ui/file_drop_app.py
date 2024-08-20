@@ -121,8 +121,9 @@ class FileDropApp(QMainWindow):
         main_layout.addWidget(header_label)
         main_layout.addWidget(self.drop_zone)
         main_layout.addWidget(list_header)
-        main_layout.addLayout(filter_layout)
+        main_layout.addLayout(filter_layout)  # Add filter_layout only once
         main_layout.addWidget(self.file_list)
+        main_layout.addLayout(button_layout)
 
     def on_text_only_changed(self, state):
         """Handle change in the text-only checkbox state."""
@@ -275,6 +276,10 @@ class FileDropApp(QMainWindow):
                 self.added_paths[path] = item
         self.current_folder = None
 
+        # Select the first item if any exist
+        if self.file_list.count() > 0:
+            self.file_list.setCurrentRow(0)
+
     def show_folder(self, folder):
         """Load the immediate children of the given folder."""
         self.current_folder = folder
@@ -319,6 +324,12 @@ class FileDropApp(QMainWindow):
             self.file_list.addItem(item)
             self.added_paths[full_path] = item
 
+        # Select the first item if any items exist
+        if self.file_list.count() > (
+            1 if self.nav_stack else 0
+        ):  # Account for ".." item
+            self.file_list.setCurrentRow(1 if self.nav_stack else 0)
+
     def clear_list(self):
         """Clear the file list and reset state."""
         self.file_list.clear()
@@ -338,8 +349,24 @@ class FileDropApp(QMainWindow):
                 self.on_item_double_clicked(selected_item)
         elif event.key() == Qt.Key.Key_Right:
             selected_item = self.file_list.currentItem()
-            if selected_item and selected_item.is_dir and selected_item.text() != "..":
-                self.on_item_double_clicked(selected_item)
+            try:
+                if (
+                    selected_item
+                    and hasattr(selected_item, "is_dir")
+                    and selected_item.is_dir
+                    and selected_item.text() != ".."
+                ):
+                    self.on_item_double_clicked(selected_item)
+                    # Set focus back to the list widget and select first item
+                    self.file_list.setFocus()
+                    if self.file_list.count() > (1 if self.nav_stack else 0):
+                        self.file_list.setCurrentRow(1 if self.nav_stack else 0)
+                else:
+                    # Pass the event up if not a directory
+                    event.ignore()
+            except (RuntimeError, AttributeError):
+                # Handle case where item has been deleted
+                event.ignore()
         elif event.key() == Qt.Key.Key_Left:
             if self.nav_stack:
                 prev_state = self.nav_stack.pop()
@@ -347,6 +374,8 @@ class FileDropApp(QMainWindow):
                     self.show_initial_items()
                 else:
                     self.show_folder(prev_state)
+            else:
+                event.ignore()
         else:
             QListWidget.keyPressEvent(self.file_list, event)
 
