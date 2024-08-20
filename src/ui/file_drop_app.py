@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QCheckBox,
+    QTabWidget,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QKeyEvent
@@ -39,9 +40,12 @@ class FileDropApp(QMainWindow):
         self.text_only = True  # Default to showing only text files
         self.hide_empty_folders = True  # Default to hiding empty folders
 
-        # Set up the UI
-        central_widget = QWidget()
-        main_layout = QVBoxLayout(central_widget)
+        # Set up the UI with tabs
+        self.tab_widget = QTabWidget()
+        
+        # Main tab
+        main_tab = QWidget()
+        main_layout = QVBoxLayout(main_tab)
         self.setStyleSheet("""
             QMainWindow { background-color: #f5f5f7; font-family: "Liga Comic Mono", monospace; }
             QListWidget { background-color: white; border-radius: 5px; border: 1px solid #e0e0e0; padding: 5px; }
@@ -61,19 +65,33 @@ class FileDropApp(QMainWindow):
 
         self.drop_zone = DropZone(self.add_files)
 
+        # Settings tab
+        settings_tab = QWidget()
+        settings_layout = QVBoxLayout(settings_tab)
+        
         # Create filter options layout
-        filter_layout = QHBoxLayout()
+        filter_layout = QVBoxLayout()
         self.text_only_checkbox = QCheckBox("Show text files only")
         self.text_only_checkbox.setChecked(self.text_only)
         self.text_only_checkbox.stateChanged.connect(self.on_text_only_changed)
         filter_layout.addWidget(self.text_only_checkbox)
-        
+
         self.hide_empty_folders_checkbox = QCheckBox("Hide empty folders")
-        self.hide_empty_folders_checkbox.setChecked(True)  # Default to hiding empty folders
-        self.hide_empty_folders_checkbox.stateChanged.connect(self.on_hide_empty_folders_changed)
+        self.hide_empty_folders_checkbox.setChecked(
+            True
+        )  # Default to hiding empty folders
+        self.hide_empty_folders_checkbox.stateChanged.connect(
+            self.on_hide_empty_folders_changed
+        )
         filter_layout.addWidget(self.hide_empty_folders_checkbox)
+
+        settings_layout.addLayout(filter_layout)
+        settings_layout.addStretch()
         
-        filter_layout.addStretch()
+        # Add tabs to tab widget
+        self.tab_widget.addTab(main_tab, "Main")
+        self.tab_widget.addTab(settings_tab, "Settings")
+        self.setCentralWidget(self.tab_widget)
 
         list_header = QLabel("Files and Folders:")
         list_header_font = QFont()
@@ -101,7 +119,7 @@ class FileDropApp(QMainWindow):
         main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.file_list)
         main_layout.addLayout(button_layout)
-        self.setCentralWidget(central_widget)
+
 
     def on_text_only_changed(self, state):
         """Handle change in the text-only checkbox state."""
@@ -141,11 +159,12 @@ class FileDropApp(QMainWindow):
         # Filter out non-text files if text_only is enabled
         if self.text_only:
             files = [path for path in files if is_text_file(path)]
-            
+
         # Filter out empty folders if hide_empty_folders is enabled
         if self.hide_empty_folders:
             folders = [
-                path for path in folders 
+                path
+                for path in folders
                 if not is_folder_empty(path, self.text_only, self.deleted_paths)
             ]
 
@@ -186,7 +205,9 @@ class FileDropApp(QMainWindow):
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
                     # Skip empty folders if hide_empty_folders is enabled
-                    if self.hide_empty_folders and is_folder_empty(full_path, self.text_only, self.deleted_paths):
+                    if self.hide_empty_folders and is_folder_empty(
+                        full_path, self.text_only, self.deleted_paths
+                    ):
                         continue
                     dirs.append(full_path)
                 else:
