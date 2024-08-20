@@ -42,7 +42,7 @@ class FileDropApp(QMainWindow):
 
         # Set up the UI with tabs
         self.tab_widget = QTabWidget()
-        
+
         # Main tab
         main_tab = QWidget()
         main_layout = QVBoxLayout(main_tab)
@@ -68,7 +68,7 @@ class FileDropApp(QMainWindow):
         # Settings tab
         settings_tab = QWidget()
         settings_layout = QVBoxLayout(settings_tab)
-        
+
         # Create filter options layout
         filter_layout = QVBoxLayout()
         self.text_only_checkbox = QCheckBox("Show text files only")
@@ -85,9 +85,14 @@ class FileDropApp(QMainWindow):
         )
         filter_layout.addWidget(self.hide_empty_folders_checkbox)
 
+        # Dark mode toggle
+        self.dark_mode_checkbox = QCheckBox("Dark mode")
+        self.dark_mode_checkbox.stateChanged.connect(self.toggle_dark_mode)
+        filter_layout.addWidget(self.dark_mode_checkbox)
+
         settings_layout.addLayout(filter_layout)
         settings_layout.addStretch()
-        
+
         # Add tabs to tab widget
         self.tab_widget.addTab(main_tab, "Main")
         self.tab_widget.addTab(settings_tab, "Settings")
@@ -118,8 +123,6 @@ class FileDropApp(QMainWindow):
         main_layout.addWidget(list_header)
         main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.file_list)
-        main_layout.addLayout(button_layout)
-
 
     def on_text_only_changed(self, state):
         """Handle change in the text-only checkbox state."""
@@ -136,6 +139,96 @@ class FileDropApp(QMainWindow):
             self.show_folder(self.current_folder)
         else:
             self.show_initial_items()
+
+    def toggle_dark_mode(self, state):
+        """Toggle between light and dark mode."""
+        if state == Qt.CheckState.Checked.value:
+            self.setStyleSheet("""
+                QMainWindow, QWidget { 
+                    background-color: #1e1e1e; 
+                    color: #ffffff; 
+                }
+                QListWidget { 
+                    background-color: #2d2d30; 
+                    color: #ffffff; 
+                    border: 1px solid #3e3e40;
+                    border-radius: 5px;
+                    padding: 5px;
+                }
+                QListWidget::item { 
+                    background-color: transparent;
+                    color: #ffffff;
+                    padding: 3px;
+                    border-bottom: 1px solid #3e3e40;
+                }
+                QListWidget::item:selected { 
+                    background-color: #3e3e40; 
+                    color: #ffffff; 
+                }
+                QPushButton { 
+                    background-color: #007acc; 
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { 
+                    background-color: #1c8ad9; 
+                }
+                QPushButton:pressed { 
+                    background-color: #005c99; 
+                }
+                QFrame { 
+                    background-color: #252526; 
+                    color: #ffffff; 
+                }
+                QLabel { 
+                    color: #ffffff; 
+                }
+                QTabWidget::pane {
+                    border: 1px solid #3e3e40;
+                    background-color: #1e1e1e;
+                }
+                QTabBar::tab {
+                    background-color: #2d2d30;
+                    color: #ffffff;
+                    padding: 8px 16px;
+                    border: 1px solid #3e3e40;
+                }
+                QTabBar::tab:selected {
+                    background-color: #1e1e1e;
+                    border-bottom-color: #007acc;
+                }
+                QTabBar::tab:hover {
+                    background-color: #3e3e40;
+                }
+                QCheckBox {
+                    color: #ffffff;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    background-color: #2d2d30;
+                    border: 1px solid #3e3e40;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #007acc;
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #007acc;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QMainWindow { background-color: #f5f5f7; font-family: "Liga Comic Mono", monospace; }
+                QListWidget { background-color: white; border-radius: 5px; border: 1px solid #e0e0e0; padding: 5px; }
+                QListWidget::item { padding: 3px; border-bottom: 1px solid #f0f0f0; }
+                QListWidget::item:selected { background-color: #e7f0fa; color: #000000; }
+                QPushButton { background-color: #4a86e8; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }
+                QPushButton:hover { background-color: #3a76d8; }
+                QPushButton:pressed { background-color: #2a66c8; }
+            """)
 
     def add_files(self, paths):
         """Add files and folders to the list."""
