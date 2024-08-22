@@ -551,7 +551,7 @@ class FileDropApp(QMainWindow):
         elif event.key() == Qt.Key.Key_Left:
             if self.nav_stack:
                 prev_state = self.nav_stack.pop()
-                if isinstance(prev_state, list):
+                if isinstance(prev_state, (list, set)):
                     self.show_initial_items()
                 else:
                     self.show_folder(prev_state)
