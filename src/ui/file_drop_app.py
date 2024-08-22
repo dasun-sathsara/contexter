@@ -10,8 +10,9 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QCheckBox,
     QTabWidget,
+    QProgressDialog,
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
@@ -25,6 +26,45 @@ from src.utils.file_operations import (
 )
 
 
+class FileSystemWorker(QThread):
+    """Worker thread for file system operations."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int)
+
+    def __init__(self, operation, *args):
+        super().__init__()
+        self.operation = operation
+        self.args = args
+
+    def run(self):
+        try:
+            if self.operation == "list_dir":
+                folder = self.args[0]
+                try:
+                    result = sorted(os.listdir(folder))
+                    self.finished.emit(result)
+                except Exception as e:
+                    self.error.emit(str(e))
+            elif self.operation == "merge_files":
+                files = self.args[0]
+                total_files = len(files)
+                result = []
+                for i, file_path in enumerate(files):
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        header = f"############## {file_path.replace(os.sep, '/')} ##############"
+                        result.extend([header, content, ""])
+                        self.progress.emit(int((i + 1) / total_files * 100))
+                    except Exception as e:
+                        print(f"Error reading file {file_path}: {e}")
+                self.finished.emit("\n".join(result))
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class FileDropApp(QMainWindow):
     """Main application window."""
 
@@ -34,11 +74,13 @@ class FileDropApp(QMainWindow):
         self.setMinimumSize(500, 500)
         self.added_paths = {}  # Tracks currently displayed items
         self.deleted_paths = set()  # Tracks deleted items
-        self.base_paths = []  # Stores initially dropped paths
+        self.base_paths = set()  # Changed from list to set
         self.current_folder = None
         self.nav_stack = []
         self.text_only = True  # Default to showing only text files
         self.hide_empty_folders = True  # Default to hiding empty folders
+        self.worker = None
+        self.progress_dialog = None
 
         # Set up the UI with tabs
         self.tab_widget = QTabWidget()
@@ -372,10 +414,10 @@ class FileDropApp(QMainWindow):
         self.deleted_paths.clear()
         self.nav_stack = []
 
-        # Add new paths to the existing base_paths rather than replacing them
+        # Add new paths to the existing base_paths
         for path in paths:
-            if os.path.exists(path) and path not in self.base_paths:
-                self.base_paths.append(path)
+            if os.path.exists(path):
+                self.base_paths.add(path)
 
         self.show_initial_items()
 
@@ -421,36 +463,38 @@ class FileDropApp(QMainWindow):
         self.current_folder = folder
         self.file_list.clear()
         self.added_paths.clear()
+
         if self.nav_stack:
             back_item = QListWidgetItem("..")
             back_item.is_dir = True
             back_item.path = None
             back_item.setFlags(back_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.file_list.addItem(back_item)
-        try:
-            entries = sorted(os.listdir(folder))
-        except Exception as e:
-            print(f"Error opening folder: {e}")
-            return
+
+        self.worker = FileSystemWorker("list_dir", folder)
+        self.worker.finished.connect(self._on_folder_loaded)
+        self.worker.error.connect(self._on_error)
+        self.worker.start()
+
+    def _on_folder_loaded(self, entries):
+        """Handle the completion of folder loading."""
         dirs = []
         files = []
         for entry in entries:
-            full_path = os.path.join(folder, entry)
+            full_path = os.path.join(self.current_folder, entry)
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
-                    # Skip empty folders if hide_empty_folders is enabled
-                    if self.hide_empty_folders and is_folder_empty(
+                    if not self.hide_empty_folders or not is_folder_empty(
                         full_path, self.text_only, self.deleted_paths
                     ):
-                        continue
-                    dirs.append(full_path)
+                        dirs.append(full_path)
                 else:
-                    # Skip non-text files if text_only is enabled
-                    if self.text_only and not is_text_file(full_path):
-                        continue
-                    files.append(full_path)
+                    if not self.text_only or is_text_file(full_path):
+                        files.append(full_path)
+
         dirs.sort()
         files.sort()
+
         for full_path in dirs:
             item = FileListItem(full_path)
             self.file_list.addItem(item)
@@ -460,18 +504,19 @@ class FileDropApp(QMainWindow):
             self.file_list.addItem(item)
             self.added_paths[full_path] = item
 
-        # Select the first item if any items exist
-        if self.file_list.count() > (
-            1 if self.nav_stack else 0
-        ):  # Account for ".." item
+        if self.file_list.count() > (1 if self.nav_stack else 0):
             self.file_list.setCurrentRow(1 if self.nav_stack else 0)
+
+    def _on_error(self, error_message):
+        """Handle file system operation errors."""
+        print(f"Error: {error_message}")
 
     def clear_list(self):
         """Clear the file list and reset state."""
         self.file_list.clear()
         self.added_paths.clear()
         self.deleted_paths.clear()
-        self.base_paths = []
+        self.base_paths = set()
         self.current_folder = None
         self.nav_stack = []
 
@@ -531,7 +576,7 @@ class FileDropApp(QMainWindow):
         if item.text() == "..":
             if self.nav_stack:
                 prev_state = self.nav_stack.pop()
-                if isinstance(prev_state, list):
+                if isinstance(prev_state, (list, set)):
                     self.show_initial_items()
                 else:
                     self.show_folder(prev_state)
@@ -540,7 +585,8 @@ class FileDropApp(QMainWindow):
             if self.current_folder:
                 self.nav_stack.append(self.current_folder)
             else:
-                self.nav_stack.append(self.base_paths)
+                # Store None instead of base_paths to indicate we should return to initial view
+                self.nav_stack.append(None)
             self.show_folder(item.path)
 
     def get_all_included_files(self):
@@ -552,6 +598,25 @@ class FileDropApp(QMainWindow):
     def generate_paths_text(self):
         """Generate text of all included file contents and copy to clipboard."""
         files = self.get_all_included_files()
-        text = merge_file_contents(files)
+        if not files:
+            return
+
+        self.progress_dialog = QProgressDialog(
+            "Merging files...", "Cancel", 0, 100, self
+        )
+        self.progress_dialog.setWindowTitle("Progress")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.show()
+
+        self.worker = FileSystemWorker("merge_files", files)
+        self.worker.finished.connect(self._on_merge_completed)
+        self.worker.progress.connect(self.progress_dialog.setValue)
+        self.worker.error.connect(self._on_error)
+        self.worker.start()
+
+    def _on_merge_completed(self, text):
+        """Handle completion of file merging."""
+        if self.progress_dialog:
+            self.progress_dialog.close()
         QApplication.clipboard().setText(text)
         print("File contents copied to clipboard.")

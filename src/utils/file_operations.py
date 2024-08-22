@@ -1,5 +1,6 @@
 import os
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
 
 
 def is_text_file(file_path):
@@ -77,6 +78,30 @@ def is_text_file(file_path):
         return False
 
 
+def _check_folder_empty(folder_path, text_only, deleted_paths):
+    """
+    Helper function to check if a folder is empty, suitable for parallel execution.
+    """
+    try:
+        entries = os.listdir(folder_path)
+    except Exception:
+        return True
+
+    for entry in entries:
+        full_path = os.path.join(folder_path, entry)
+        if full_path in deleted_paths:
+            continue
+
+        if os.path.isfile(full_path):
+            if not text_only or is_text_file(full_path):
+                return False
+        elif os.path.isdir(full_path):
+            if not is_folder_empty(full_path, text_only, deleted_paths):
+                return False
+
+    return True
+
+
 def is_folder_empty(folder_path, text_only=False, deleted_paths=None):
     """
     Check if a folder is empty or contains only empty subfolders.
@@ -92,37 +117,41 @@ def is_folder_empty(folder_path, text_only=False, deleted_paths=None):
     if deleted_paths is None:
         deleted_paths = set()
 
+    return _check_folder_empty(folder_path, text_only, deleted_paths)
+
+
+def _collect_files_worker(args):
+    """
+    Worker function for collecting files in parallel.
+    """
+    folder, all_files, deleted_paths, text_only = args
     try:
-        entries = os.listdir(folder_path)
-    except Exception:
-        # If we can't read the folder, consider it empty
-        return True
-
-    for entry in entries:
-        full_path = os.path.join(folder_path, entry)
-
-        # Skip entries that are in deleted_paths
-        if full_path in deleted_paths:
-            continue
-
-        if os.path.isfile(full_path):
-            # If text_only is True, only consider text files
-            if not text_only or is_text_file(full_path):
-                return False  # Found a file, folder is not empty
-        elif os.path.isdir(full_path):
-            # Recursive check for subfolders
-            if not is_folder_empty(full_path, text_only, deleted_paths):
-                return False  # Found a non-empty subfolder
-
-    return True  # No files or non-empty subfolders found
+        entries = os.listdir(folder)
+        result = []
+        for entry in entries:
+            full_path = os.path.join(folder, entry)
+            if full_path not in deleted_paths:
+                if os.path.isfile(full_path):
+                    if not text_only or is_text_file(full_path):
+                        result.append(full_path)
+                elif os.path.isdir(full_path):
+                    subdir_files = _collect_files_worker(
+                        (full_path, all_files, deleted_paths, text_only)
+                    )
+                    result.extend(subdir_files)
+        return result
+    except Exception as e:
+        print(f"Error reading folder {folder}: {e}")
+        return []
 
 
 def get_all_files_recursive(base_paths, deleted_paths, text_only=False):
     """
     Collect all included file paths recursively, excluding deleted ones.
+    Uses parallel processing for better performance with large directories.
 
     Args:
-        base_paths (list): List of base file/folder paths
+        base_paths (set): Set of base file/folder paths
         deleted_paths (set): Set of paths that have been deleted/excluded
         text_only (bool): If True, only include text files
 
@@ -130,39 +159,29 @@ def get_all_files_recursive(base_paths, deleted_paths, text_only=False):
         list: Sorted list of all file paths
     """
     all_files = set()
+    folders_to_process = []
+
+    # Process immediate files and collect folders
     for path in base_paths:
         if path not in deleted_paths:
             if os.path.isfile(path):
                 if not text_only or is_text_file(path):
                     all_files.add(path)
             elif os.path.isdir(path):
-                _collect_files(path, all_files, deleted_paths, text_only)
+                folders_to_process.append(path)
+
+    # Process folders in parallel if there are any
+    if folders_to_process:
+        with ThreadPoolExecutor() as executor:
+            args = [
+                (folder, all_files, deleted_paths, text_only)
+                for folder in folders_to_process
+            ]
+            results = executor.map(_collect_files_worker, args)
+            for result in results:
+                all_files.update(result)
+
     return sorted(all_files)
-
-
-def _collect_files(folder, all_files, deleted_paths, text_only=False):
-    """
-    Helper method to collect file paths recursively.
-
-    Args:
-        folder (str): Folder path to collect files from
-        all_files (set): Set to store collected file paths
-        deleted_paths (set): Set of paths that have been deleted/excluded
-        text_only (bool): If True, only include text files
-    """
-    try:
-        entries = os.listdir(folder)
-    except Exception as e:
-        print(f"Error reading folder {folder}: {e}")
-        return
-    for entry in entries:
-        full_path = os.path.join(folder, entry)
-        if full_path not in deleted_paths:
-            if os.path.isfile(full_path):
-                if not text_only or is_text_file(full_path):
-                    all_files.add(full_path)
-            elif os.path.isdir(full_path):
-                _collect_files(full_path, all_files, deleted_paths, text_only)
 
 
 def merge_file_contents(file_paths):
