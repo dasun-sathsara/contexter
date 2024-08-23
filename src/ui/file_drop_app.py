@@ -20,7 +20,6 @@ from src.ui.drop_zone import DropZone
 from src.models.file_list_item import FileListItem
 from src.utils.file_operations import (
     get_all_files_recursive,
-    merge_file_contents,
     is_text_file,
     is_folder_empty,
 )
@@ -47,6 +46,8 @@ class FileSystemWorker(QThread):
                     self.finished.emit(result)
                 except Exception as e:
                     self.error.emit(str(e))
+                    # Don't emit a result if there was an error
+                    return
             elif self.operation == "merge_files":
                 files = self.args[0]
                 total_files = len(files)
@@ -232,7 +233,6 @@ class FileDropApp(QMainWindow):
         main_layout.addWidget(header_label)
         main_layout.addWidget(self.drop_zone)
         main_layout.addWidget(list_header)
-        main_layout.addLayout(filter_layout)  # Add filter_layout only once
         main_layout.addWidget(self.file_list)
         main_layout.addLayout(button_layout)
 
@@ -480,7 +480,11 @@ class FileDropApp(QMainWindow):
         """Handle the completion of folder loading."""
         dirs = []
         files = []
-        for entry in entries:
+
+        # Filter out None entries and process valid ones
+        valid_entries = [entry for entry in entries if entry is not None]
+
+        for entry in valid_entries:
             full_path = os.path.join(self.current_folder, entry)
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
@@ -488,9 +492,8 @@ class FileDropApp(QMainWindow):
                         full_path, self.text_only, self.deleted_paths
                     ):
                         dirs.append(full_path)
-                else:
-                    if not self.text_only or is_text_file(full_path):
-                        files.append(full_path)
+                elif not self.text_only or is_text_file(full_path):
+                    files.append(full_path)
 
         dirs.sort()
         files.sort()
