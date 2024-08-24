@@ -23,6 +23,7 @@ class FileSystemWorker(QThread):
                     self.finished.emit(result)
                 except Exception as e:
                     self.error.emit(str(e))
+                    return
             elif self.operation == "merge_files":
                 files = self.args[0]
                 total_files = len(files)
