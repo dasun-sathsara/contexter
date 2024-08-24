@@ -460,6 +460,11 @@ class FileDropApp(QMainWindow):
 
     def show_folder(self, folder):
         """Load the immediate children of the given folder."""
+        if not folder:
+            # If folder is None or empty, go back to the initial view.
+            self.show_initial_items()
+            return
+
         self.current_folder = folder
         self.file_list.clear()
         self.added_paths.clear()
