@@ -27,9 +27,12 @@ class FileDropApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("File Drop Interface")
         self.setMinimumSize(500, 500)
+
+        # Initialize theme state before setup_ui
+        self._is_dark_mode = False
         self.setup_ui()
 
-        # Apply default light theme
+        # Apply initial theme
         ThemeManager.apply_light_theme(self)
 
     def setup_ui(self):
@@ -75,6 +78,8 @@ class FileDropApp(QMainWindow):
 
         # Settings tab
         self.settings_panel = SettingsPanel()
+        # Initialize checkbox state
+        self.settings_panel.dark_mode_checkbox.setChecked(self._is_dark_mode)
         self.settings_panel.text_only_changed.connect(self.on_text_only_changed)
         self.settings_panel.hide_empty_folders_changed.connect(
             self.on_hide_empty_folders_changed
@@ -108,7 +113,8 @@ class FileDropApp(QMainWindow):
 
     def toggle_dark_mode(self, state):
         """Toggle between light and dark mode."""
-        if state == Qt.CheckState.Checked.value:
+        self._is_dark_mode = state  # Use the Boolean value directly
+        if self._is_dark_mode:
             ThemeManager.apply_dark_theme(self)
         else:
             ThemeManager.apply_light_theme(self)
