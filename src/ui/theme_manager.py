@@ -84,13 +84,11 @@ class ThemeManager:
     @staticmethod
     def apply_dark_theme(window: QMainWindow):
         window.setStyleSheet("""
-            QMainWindow, QWidget { 
+            QMainWindow, QWidget, QListWidget, QFrame { 
                 background-color: #1e1e1e; 
                 color: #ffffff; 
             }
             QListWidget { 
-                background-color: #2d2d30; 
-                color: #ffffff; 
                 border: 1px solid #3e3e40;
                 border-radius: 5px;
                 padding: 5px;
@@ -119,10 +117,6 @@ class ThemeManager:
             QPushButton:pressed { 
                 background-color: #005c99; 
             }
-            QFrame { 
-                background-color: #252526; 
-                color: #ffffff; 
-            }
             QLabel { 
                 color: #ffffff; 
             }
@@ -149,7 +143,7 @@ class ThemeManager:
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
-                background-color: #2d2d30;
+                background-color: #1e1e1e;
                 border: 1px solid #3e3e40;
             }
             QCheckBox::indicator:checked {

@@ -76,6 +76,12 @@ class FileDropApp(QMainWindow):
         main_layout.addWidget(self.file_list)
         main_layout.addLayout(button_layout)
 
+        # Add a loading indicator
+        self.loading_label = QLabel("Processing...")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_label.setVisible(False)  # Initially hidden
+        main_layout.addWidget(self.loading_label)
+
         # Settings tab
         self.settings_panel = SettingsPanel()
         # Initialize checkbox state
@@ -125,26 +131,28 @@ class FileDropApp(QMainWindow):
         if not files:
             return
 
-        self.progress_dialog = QProgressDialog(
-            "Merging files...", "Cancel", 0, 100, self
-        )
-        self.progress_dialog.setWindowTitle("Progress")
-        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress_dialog.show()
+        # Show the loading indicator
+        self.loading_label.setVisible(True)
 
         self.worker = FileSystemWorker("merge_files", files)
         self.worker.finished.connect(self._on_merge_completed)
-        self.worker.progress.connect(self.progress_dialog.setValue)
+        self.worker.progress.connect(
+            lambda value: None
+        )  # Placeholder for progress updates
         self.worker.error.connect(self._on_error)
         self.worker.start()
 
     def _on_merge_completed(self, text):
         """Handle completion of file merging."""
-        if self.progress_dialog:
-            self.progress_dialog.close()
+        # Hide the loading indicator
+        self.loading_label.setVisible(False)
+
         QApplication.clipboard().setText(text)
         print("File contents copied to clipboard.")
 
     def _on_error(self, error_message):
         """Handle file system operation errors."""
+        # Hide the loading indicator
+        self.loading_label.setVisible(False)
+
         print(f"Error: {error_message}")
