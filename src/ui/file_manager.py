@@ -1,7 +1,8 @@
 import os
-from PyQt6.QtWidgets import QListWidget, QListWidgetItem
+from PyQt6.QtWidgets import QListWidget, QApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QStyle
 from typing import Set, Dict, Optional, List
 
 from src.models.file_list_item import FileListItem
@@ -24,9 +25,14 @@ class FileManager:
         self.nav_stack: List[Optional[str]] = []
         self.text_only = True
         self.hide_empty_folders = True
+        self.show_token_count = True
         self.worker = None
         self.progress_dialog = None
+        self.token_workers = []
 
+        # Enable HTML rendering in list widget
+        self.file_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.file_list.setWordWrap(False)
         # Connect list widget signals
         self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.file_list.keyPressEvent = self.list_key_press_event
@@ -40,6 +46,10 @@ class FileManager:
             self.base_paths.add(path)
 
         self.show_initial_items()
+
+        # Calculate token counts if enabled
+        if self.show_token_count:
+            self.calculate_token_counts()
 
     def show_initial_items(self):
         """Show the initially added files and folders."""
@@ -66,6 +76,7 @@ class FileManager:
             if path not in self.deleted_paths:
                 item = FileListItem(path)
                 self.file_list.addItem(item)
+                self.file_list.setItemWidget(item, item.content_widget)
                 self.added_paths[path] = item
 
         self.current_folder = None
@@ -83,11 +94,16 @@ class FileManager:
         self.added_paths.clear()
 
         if self.nav_stack:
-            back_item = QListWidgetItem("..")
+            # Create back item using FileListItem for consistent styling
+            back_item = FileListItem("..")
             back_item.is_dir = True
             back_item.path = None
             back_item.setFlags(back_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            back_item.setIcon(
+                QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ArrowLeft)
+            )
             self.file_list.addItem(back_item)
+            self.file_list.setItemWidget(back_item, back_item.content_widget)
 
         self.worker = FileSystemWorker("list_dir", folder)
         self.worker.finished.connect(self._on_folder_loaded)
@@ -118,10 +134,15 @@ class FileManager:
         for full_path in dirs + files:
             item = FileListItem(full_path)
             self.file_list.addItem(item)
+            self.file_list.setItemWidget(item, item.content_widget)
             self.added_paths[full_path] = item
 
         if self.file_list.count() > (1 if self.nav_stack else 0):
             self.file_list.setCurrentRow(1 if self.nav_stack else 0)
+
+        # Calculate token counts if enabled
+        if self.show_token_count:
+            self.calculate_token_counts()
 
     def _on_error(self, error_message):
         """Handle file system operation errors."""
@@ -207,3 +228,46 @@ class FileManager:
         return get_all_files_recursive(
             self.base_paths, self.deleted_paths, self.text_only
         )
+
+    def calculate_token_counts(self):
+        """Calculate token counts for all visible items asynchronously."""
+        if not self.show_token_count:
+            return
+
+        # Clear any existing token workers
+        for worker in self.token_workers:
+            if worker.isRunning():
+                worker.terminate()
+                worker.wait()
+        self.token_workers = []
+
+        # Process all visible items
+        for path, item in self.added_paths.items():
+            worker = FileSystemWorker(
+                "count_tokens", path, self.text_only, self.deleted_paths
+            )
+            worker.token_count_result.connect(self._on_token_count_result)
+            worker.error.connect(self._on_error)
+            self.token_workers.append(worker)
+            worker.start()
+
+    def _on_token_count_result(self, path, token_count):
+        """Handle token count result for a file or folder."""
+        if path in self.added_paths:
+            item = self.added_paths[path]
+            item.set_token_count(token_count)
+
+    def on_show_token_count_changed(self, state):
+        """Handle change in the show-token-count checkbox state."""
+        self.show_token_count = state
+
+        # Update all items to show/hide token counts
+        for path, item in self.added_paths.items():
+            if not state:
+                # Reset token display if disabled
+                item.token_count = None
+                item.update_display_text()
+            elif item.token_count is None:
+                # Recalculate if enabled and not already calculated
+                self.calculate_token_counts()
+                break

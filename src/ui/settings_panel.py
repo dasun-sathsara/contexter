@@ -6,6 +6,7 @@ class SettingsPanel(QWidget):
     text_only_changed = pyqtSignal(bool)
     hide_empty_folders_changed = pyqtSignal(bool)
     theme_changed = pyqtSignal(bool)
+    show_token_count_changed = pyqtSignal(bool)
 
     def __init__(self):
         super().__init__()
@@ -33,6 +34,16 @@ class SettingsPanel(QWidget):
             )
         )
         layout.addWidget(self.hide_empty_folders_checkbox)
+        
+        # Show token count toggle
+        self.show_token_count_checkbox = QCheckBox("Show token counts")
+        self.show_token_count_checkbox.setChecked(True)
+        self.show_token_count_checkbox.stateChanged.connect(
+            lambda state: self.show_token_count_changed.emit(
+                state == Qt.CheckState.Checked.value
+            )
+        )
+        layout.addWidget(self.show_token_count_checkbox)
 
         # Dark mode toggle
         self.dark_mode_checkbox = QCheckBox("Dark mode")

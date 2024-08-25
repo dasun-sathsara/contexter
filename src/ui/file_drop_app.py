@@ -91,6 +91,9 @@ class FileDropApp(QMainWindow):
             self.on_hide_empty_folders_changed
         )
         self.settings_panel.theme_changed.connect(self.toggle_dark_mode)
+        self.settings_panel.show_token_count_changed.connect(
+            self.on_show_token_count_changed
+        )
 
         # Add tabs to tab widget
         self.tab_widget.addTab(main_tab, "Main")
@@ -116,6 +119,10 @@ class FileDropApp(QMainWindow):
             self.file_manager.show_folder(self.file_manager.current_folder)
         else:
             self.file_manager.show_initial_items()
+            
+    def on_show_token_count_changed(self, state):
+        """Handle change in the show-token-count checkbox state."""
+        self.file_manager.on_show_token_count_changed(state == Qt.CheckState.Checked.value)
 
     def toggle_dark_mode(self, state):
         """Toggle between light and dark mode."""
