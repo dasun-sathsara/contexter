@@ -18,13 +18,17 @@ class ThemeManager:
             }
             QListWidget::item { 
                 background-color: transparent;
-                color: #000000;
-                padding: 3px;
-                border-bottom: 1px solid #f0f0f0;
+                padding: 0;
+                border: none;
             }
             QListWidget::item:selected { 
-                background-color: #e7f0fa; 
-                color: #000000; 
+                background-color: transparent;
+            }
+            QListWidget QWidget {
+                background-color: transparent;
+            }
+            QListWidget QWidget[selected="true"] {
+                background-color: #e7f0fa;
             }
             QPushButton { 
                 background-color: #4a86e8; 
@@ -46,6 +50,12 @@ class ThemeManager:
             }
             QLabel { 
                 color: #000000; 
+            }
+            #token_label {
+                color: #888;
+            }
+            QListWidget QWidget[selected="true"] #token_label {
+                color: #000000;
             }
             QTabWidget::pane {
                 border: 1px solid #e0e0e0;
@@ -95,13 +105,17 @@ class ThemeManager:
             }
             QListWidget::item { 
                 background-color: transparent;
-                color: #ffffff;
-                padding: 3px;
-                border-bottom: 1px solid #3e3e40;
+                padding: 0;
+                border: none;
             }
             QListWidget::item:selected { 
-                background-color: #3e3e40; 
-                color: #ffffff; 
+                background-color: transparent;
+            }
+            QListWidget QWidget {
+                background-color: transparent;
+            }
+            QListWidget QWidget[selected="true"] {
+                background-color: #3e3e40;
             }
             QPushButton { 
                 background-color: #007acc; 
@@ -119,6 +133,12 @@ class ThemeManager:
             }
             QLabel { 
                 color: #ffffff; 
+            }
+            #token_label {
+                color: #888;
+            }
+            QListWidget QWidget[selected="true"] #token_label {
+                color: #ffffff;
             }
             QTabWidget::pane {
                 border: 1px solid #3e3e40;

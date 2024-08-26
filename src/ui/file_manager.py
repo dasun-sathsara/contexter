@@ -36,6 +36,7 @@ class FileManager:
         # Connect list widget signals
         self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.file_list.keyPressEvent = self.list_key_press_event
+        self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
 
     def add_files(self, paths):
         """Add files and folders to the list."""
@@ -271,3 +272,11 @@ class FileManager:
                 # Recalculate if enabled and not already calculated
                 self.calculate_token_counts()
                 break
+
+    def on_selection_changed(self):
+        """Handle selection changes in the list widget."""
+        # Update all items to reflect their current selection state
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if hasattr(item, "update_widget_style"):
+                item.update_widget_style(item.isSelected())

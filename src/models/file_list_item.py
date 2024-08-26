@@ -23,13 +23,13 @@ class FileListItem(QListWidgetItem):
         # Create widget to hold the content
         self.content_widget = QWidget()
         layout = QHBoxLayout(self.content_widget)
-        # Increase vertical padding significantly and adjust spacing
         layout.setContentsMargins(4, 8, 8, 8)
         layout.setSpacing(6)
 
         # Create labels for the name and token count
         self.name_label = QLabel(self.name)
         self.token_label = QLabel()
+        self.token_label.setObjectName("token_label")
         self.token_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -59,21 +59,26 @@ class FileListItem(QListWidgetItem):
         # Set size hint for proper layout
         self.setSizeHint(self.content_widget.sizeHint())
 
+        # Initialize selection state
+        self.update_widget_style(False)
+
     def update_display_text(self):
         if self.token_count is not None:
             if self.token_count >= 1000:
                 token_display = f"{self.token_count / 1000:.1f}k"
             else:
                 token_display = str(self.token_count)
-            # Adjust font size and add padding to prevent text cutoff
-            self.token_label.setStyleSheet("""
-                font-size: 0.9rem;
-                color: #888;
-                padding: 2px 0;
-            """)
             self.token_label.setText(token_display)
         else:
             self.token_label.setText("")
+
+    def update_widget_style(self, is_selected):
+        """Update the widget style based on selection state."""
+        # Use dynamic property to handle selection state
+        self.content_widget.setProperty("selected", is_selected)
+        # Force style refresh
+        self.content_widget.style().unpolish(self.content_widget)
+        self.content_widget.style().polish(self.content_widget)
 
     def set_token_count(self, count):
         """Set the token count and update display."""
