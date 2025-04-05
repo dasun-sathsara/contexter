@@ -75,16 +75,17 @@ class FileDropApp(QMainWindow):
 
         # Add a keyboard shortcut hint label
         shortcut_label = QLabel(
-            "Vim Shortcuts: v (visual mode), V (select all lines), y (copy), C (clear list), d+d (delete), Esc (exit mode)"
+            "Vim Shortcuts: v (visual mode), V (select all), y (copy), C (clear), d+d (delete), Esc (exit)"
         )
         shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        shortcut_label.setStyleSheet("color: #666; font-size: 10.5px;")
+        shortcut_label.setStyleSheet("color: #666; font-size: 10.5px; margin-top: 4px; margin-bottom: 4px;")
         main_layout.addWidget(shortcut_label)
 
         # Add a loading indicator
         self.loading_label = QLabel("Processing...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setVisible(False)  # Initially hidden
+        self.loading_label.setStyleSheet("color: #444; font-style: italic; margin: 6px;")
         main_layout.addWidget(self.loading_label)
 
         # Settings tab
@@ -149,6 +150,7 @@ class FileDropApp(QMainWindow):
         files = [f for f in files if f not in deleted]
 
         if not files:
+            self.statusBar().showMessage("No files to process.", 3000)
             return
 
         # Show the loading indicator
@@ -166,7 +168,7 @@ class FileDropApp(QMainWindow):
                 merged_text = ""
             return merged_text
 
-        from PyQt6.QtCore import QThread, pyqtSignal, QObject
+        from PyQt6.QtCore import QThread, pyqtSignal
 
         class MergeWorker(QThread):
             finished = pyqtSignal(str)
@@ -214,12 +216,13 @@ class FileDropApp(QMainWindow):
                     content = f.read()
             except Exception:
                 content = "[Error reading file]"
-            output_lines.append(f"\n## File {idx}: `{file_path}`\n")
+            filename = file_path.replace("\\", "/").split("/")[-1]
+            output_lines.append(f"\n### File {idx}: `{filename}`\n")
             output_lines.append("```")
             output_lines.append(content.strip())
             output_lines.append("```\n")
 
-        improved_text = "\n".join(output_lines)
+        improved_text = "\n".join(output_lines).strip()
 
         clipboard = QApplication.clipboard()
         if clipboard is not None:

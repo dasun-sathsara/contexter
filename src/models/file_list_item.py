@@ -38,6 +38,12 @@ class FileListItem(QListWidgetItem):
         self.name_label.setMinimumHeight(20)
         self.token_label.setMinimumHeight(20)
 
+        # Improve font and style
+        font = self.name_label.font()
+        font.setPointSize(11)  # slightly larger font
+        self.name_label.setFont(font)
+        self.token_label.setFont(font)
+
         layout.addWidget(self.name_label)
         layout.addStretch()
         layout.addWidget(self.token_label)
@@ -54,7 +60,13 @@ class FileListItem(QListWidgetItem):
                     style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
                 )
 
-        self.setToolTip(path)
+        # Improve tooltip with relative path if possible
+        try:
+            rel_path = os.path.relpath(path)
+            self.setToolTip(rel_path)
+        except Exception:
+            self.setToolTip(path)
+
         self.update_display_text()
 
         # Ensure minimum height for the widget

@@ -106,6 +106,10 @@ class FileManager:
         if self.show_token_count:
             self.calculate_token_counts()
 
+        # Show message
+        if self.parent and hasattr(self.parent, "statusBar"):
+            self.parent.statusBar().showMessage(f"Added {len(paths)} item(s).", 2000)
+
     def show_initial_items(self):
         """Show the initially added files and folders."""
         self.file_list.clear()
@@ -194,6 +198,8 @@ class FileManager:
     def _on_error(self, error_message):
         """Handle file system operation errors."""
         print(f"Error: {error_message}")
+        if self.parent and hasattr(self.parent, "statusBar"):
+            self.parent.statusBar().showMessage(f"Error: {error_message}", 5000)
 
     def clear_list(self):
         """Clear the file list and reset state."""
@@ -204,6 +210,10 @@ class FileManager:
         self.current_folder = None
         self.nav_stack = []
         self.tree_builder = None
+
+        # Show cleared message
+        if self.parent and hasattr(self.parent, "statusBar"):
+            self.parent.statusBar().showMessage("File list cleared.", 2000)
 
     def list_key_press_event(self, event: QKeyEvent):
         """Handle key press events in the list widget."""
@@ -365,6 +375,7 @@ class FileManager:
     def remove_selected_items(self):
         """Remove selected items from the list."""
         selected_items = self.file_list.selectedItems()[::-1]
+        count = 0
         for item in selected_items:
             path = getattr(item, "path", None)
             if path:
@@ -373,6 +384,11 @@ class FileManager:
                     del self.added_paths[path]
                 row = self.file_list.row(item)
                 self.file_list.takeItem(row)
+                count += 1
+
+        # Show message
+        if self.parent and hasattr(self.parent, "statusBar"):
+            self.parent.statusBar().showMessage(f"Removed {count} item(s).", 2000)
 
     def on_item_double_clicked(self, item):
         """Navigate into folder or go back if '..' is clicked."""
@@ -463,6 +479,14 @@ class FileManager:
                         update_style(is_selected())
                 except AttributeError:
                     pass
+
+        # Show count of selected files
+        selected_count = len(self.file_list.selectedItems())
+        if self.parent and hasattr(self.parent, "statusBar"):
+            if selected_count > 0:
+                self.parent.statusBar().showMessage(f"{selected_count} item(s) selected", 1500)
+            else:
+                self.parent.statusBar().clearMessage()
 
     def _update_visual_selection(self):
         """Update selection range in visual mode."""
