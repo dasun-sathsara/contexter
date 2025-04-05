@@ -141,22 +141,42 @@ class FileDropApp(QMainWindow):
 
     def generate_paths_text(self):
         """Generate text of all included file contents and copy to clipboard."""
+        # Get the files currently displayed in the viewer, respecting .gitignore and filters
         files = self.file_manager.get_all_included_files()
+
+        # Filter out any files that have been removed from the view (deleted_paths)
+        deleted = getattr(self.file_manager, "deleted_paths", set())
+        files = [f for f in files if f not in deleted]
+
         if not files:
             return
 
         # Show the loading indicator
         self.loading_label.setVisible(True)
 
-        # Save file list for later use in _on_merge_completed
+        # Save file list for later use
         self._merge_files_list = list(files)
 
-        self.worker = FileSystemWorker("merge_files", files)
+        from src.utils.file_operations import merge_file_contents
+
+        def do_merge():
+            try:
+                merged_text = merge_file_contents(files)
+            except Exception:
+                merged_text = ""
+            return merged_text
+
+        from PyQt6.QtCore import QThread, pyqtSignal, QObject
+
+        class MergeWorker(QThread):
+            finished = pyqtSignal(str)
+
+            def run(self):
+                merged = do_merge()
+                self.finished.emit(merged)
+
+        self.worker = MergeWorker()
         self.worker.finished.connect(self._on_merge_completed_wrapper)
-        self.worker.progress.connect(
-            lambda value: None
-        )  # Placeholder for progress updates
-        self.worker.error.connect(self._on_error)
         self.worker.start()
 
     def _on_merge_completed(self, text):
@@ -184,18 +204,21 @@ class FileDropApp(QMainWindow):
         # Hide the loading indicator
         self.loading_label.setVisible(False)
 
-        # Compose output with file headers
-        output_lines = ["===== Combined File Contents =====\n"]
-        offset = 0
+        # Compose output formatted for LLM input using markdown
+        output_lines = []
+        output_lines.append("# Combined Files\n")
+
         for idx, file_path in enumerate(self._merge_files_list, 1):
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
             except Exception:
                 content = "[Error reading file]"
-            output_lines.append(f"\n--- File {idx}: {file_path} ---\n")
-            output_lines.append(content.strip() + "\n")
-        output_lines.append("\n===== End =====\n")
+            output_lines.append(f"\n## File {idx}: `{file_path}`\n")
+            output_lines.append("```")
+            output_lines.append(content.strip())
+            output_lines.append("```\n")
+
         improved_text = "\n".join(output_lines)
 
         clipboard = QApplication.clipboard()

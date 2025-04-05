@@ -1,6 +1,9 @@
 import os
 import mimetypes
+import threading
 from concurrent.futures import ThreadPoolExecutor
+
+from src.utils.gitignore import load_gitignore_patterns, is_ignored
 
 
 def is_text_file(file_path):
@@ -206,3 +209,98 @@ def merge_file_contents(file_paths):
         except Exception as e:
             print(f"Error reading file {file_path}: {e}")
     return "\n".join(output)
+
+
+class FileTreeBuilder:
+    """
+    Centralized, cached recursive file/folder collector with filtering.
+    """
+
+    def __init__(self, base_paths, text_only=True, hide_empty_folders=True, deleted_paths=None):
+        self.base_paths = set(base_paths)
+        self.text_only = text_only
+        self.hide_empty_folders = hide_empty_folders
+        self.deleted_paths = deleted_paths or set()
+
+        self._lock = threading.Lock()
+        self._cache = None  # Will hold the tree dict
+        self._flat_file_list = None  # Flat list of included files
+        self._gitignore_specs = {}
+
+    def build_tree(self):
+        """
+        Build and cache the file tree.
+        """
+        with self._lock:
+            self._cache = {"folders": {}, "files": []}
+            self._flat_file_list = []
+
+            for base in self.base_paths:
+                spec = load_gitignore_patterns(base)
+                self._gitignore_specs[base] = spec
+
+                if os.path.isfile(base):
+                    if base not in self.deleted_paths and (not self.text_only or is_text_file(base)):
+                        self._cache["files"].append(base)
+                        self._flat_file_list.append(base)
+                elif os.path.isdir(base):
+                    subtree = self._scan_folder(base, spec)
+                    if subtree is not None:
+                        self._cache["folders"][base] = subtree
+
+    def _scan_folder(self, folder_path, spec):
+        """
+        Recursively scan a folder, applying filters.
+        """
+        try:
+            entries = os.listdir(folder_path)
+        except Exception:
+            return None
+
+        folder_dict = {"folders": {}, "files": []}
+        has_content = False
+
+        for entry in sorted(entries):
+            full_path = os.path.join(folder_path, entry)
+            rel_path = os.path.relpath(full_path, start=folder_path)
+
+            if full_path in self.deleted_paths:
+                continue
+            if is_ignored(rel_path, spec):
+                continue
+
+            if os.path.isfile(full_path):
+                if not self.text_only or is_text_file(full_path):
+                    folder_dict["files"].append(full_path)
+                    self._flat_file_list.append(full_path)
+                    has_content = True
+            elif os.path.isdir(full_path):
+                sub_spec = load_gitignore_patterns(full_path)
+                subtree = self._scan_folder(full_path, sub_spec)
+                if subtree and (
+                    subtree["files"] or subtree["folders"] or not self.hide_empty_folders
+                ):
+                    folder_dict["folders"][full_path] = subtree
+                    has_content = True
+
+        if not has_content and self.hide_empty_folders:
+            return None
+        return folder_dict
+
+    def get_flat_file_list(self):
+        """
+        Return the cached flat list of included files.
+        """
+        with self._lock:
+            if self._flat_file_list is None:
+                self.build_tree()
+            return list(self._flat_file_list)
+
+    def get_tree(self):
+        """
+        Return the cached tree structure.
+        """
+        with self._lock:
+            if self._cache is None:
+                self.build_tree()
+            return self._cache

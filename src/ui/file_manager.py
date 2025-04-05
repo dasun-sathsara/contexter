@@ -8,9 +8,8 @@ from typing import Set, Dict, Optional, List
 from src.models.file_list_item import FileListItem
 from src.utils.file_system_worker import FileSystemWorker
 from src.utils.file_operations import (
-    get_all_files_recursive,
+    FileTreeBuilder,
     is_text_file,
-    is_folder_empty,
 )
 
 from src.utils.gitignore import load_gitignore_patterns, is_ignored
@@ -30,8 +29,6 @@ class FileManager:
         self.text_only = True
         self.hide_empty_folders = True
         self.show_token_count = True
-        self.worker = None
-        self.progress_dialog = None
         self.token_workers = []
 
         # Vim visual mode state
@@ -39,9 +36,6 @@ class FileManager:
         self.visual_anchor_row: Optional[int] = None
         self.status_bar: Optional[QStatusBar] = None
         self.status_label: Optional[QLabel] = None
-
-        # .gitignore PathSpec cache
-        self.gitignore_specs: Dict[str, Optional[object]] = {}
 
         # Visual mode highlight color
         self.visual_mode_highlight_color = QColor(
@@ -70,6 +64,9 @@ class FileManager:
         # Create status bar for visual mode indication
         self._setup_status_bar()
 
+        # Initialize file tree builder
+        self.tree_builder: Optional[FileTreeBuilder] = None
+
     def _setup_status_bar(self):
         """Set up a status bar to display mode information"""
         if self.parent and hasattr(self.parent, "statusBar"):
@@ -92,12 +89,16 @@ class FileManager:
         """Add files and folders to the list."""
         self.deleted_paths.clear()
         self.nav_stack = []
+        self.base_paths.update(paths)
 
-        for path in paths:
-            self.base_paths.add(path)
-            # Load .gitignore for each base path
-            spec = load_gitignore_patterns(path)
-            self.gitignore_specs[path] = spec
+        # Build the file tree
+        self.tree_builder = FileTreeBuilder(
+            self.base_paths,
+            text_only=self.text_only,
+            hide_empty_folders=self.hide_empty_folders,
+            deleted_paths=self.deleted_paths,
+        )
+        self.tree_builder.build_tree()
 
         self.show_initial_items()
 
@@ -110,43 +111,20 @@ class FileManager:
         self.file_list.clear()
         self.added_paths.clear()
 
-        folders = [path for path in self.base_paths if path and os.path.isdir(path)]
-        files = [path for path in self.base_paths if path and not os.path.isdir(path)]
+        if not self.tree_builder:
+            return
 
-        # Filter ignored
-        filtered_folders = []
-        for folder in folders:
-            spec = self._get_gitignore_spec_for_path(folder)
-            if not is_ignored(os.path.relpath(folder, start=os.path.dirname(folder)), spec):
-                filtered_folders.append(folder)
-        folders = filtered_folders
+        tree = self.tree_builder.get_tree()
 
-        filtered_files = []
-        for file in files:
-            spec = self._get_gitignore_spec_for_path(file)
-            if not is_ignored(os.path.relpath(file, start=os.path.dirname(file)), spec):
-                filtered_files.append(file)
-        files = filtered_files
-
-        if self.text_only:
-            files = [path for path in files if is_text_file(path)]
-
-        if self.hide_empty_folders:
-            folders = [
-                path
-                for path in folders
-                if not is_folder_empty(path, self.text_only, self.deleted_paths)
-            ]
-
-        folders.sort()
-        files.sort()
+        # Show top-level folders and files
+        folders = sorted(tree["folders"].keys())
+        files = sorted(tree["files"])
 
         for path in folders + files:
-            if path not in self.deleted_paths:
-                item = FileListItem(path)
-                self.file_list.addItem(item)
-                self.file_list.setItemWidget(item, item.content_widget)
-                self.added_paths[path] = item
+            item = FileListItem(path)
+            self.file_list.addItem(item)
+            self.file_list.setItemWidget(item, item.content_widget)
+            self.added_paths[path] = item
 
         self.current_folder = None
         if self.file_list.count() > 0:
@@ -154,7 +132,7 @@ class FileManager:
 
     def show_folder(self, folder: str):
         """Load the immediate children of the given folder."""
-        if not folder:
+        if not folder or not self.tree_builder:
             self.show_initial_items()
             return
 
@@ -162,15 +140,11 @@ class FileManager:
         self.file_list.clear()
         self.added_paths.clear()
 
-        # Load .gitignore for this folder
-        spec = load_gitignore_patterns(folder)
-        self.gitignore_specs[folder] = spec
-
+        # Add back button if navigating inside
         if self.nav_stack:
-            # Create back item using FileListItem for consistent styling
             back_item = FileListItem("..")
             back_item.is_dir = True
-            back_item.path = ".."  # avoid None assignment
+            back_item.path = ".."
             back_item.setFlags(back_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             style = QApplication.style()
             if style is not None:
@@ -180,44 +154,20 @@ class FileManager:
             self.file_list.addItem(back_item)
             self.file_list.setItemWidget(back_item, back_item.content_widget)
 
-        self.worker = FileSystemWorker("list_dir", folder)
-        self.worker.finished.connect(self._on_folder_loaded)
-        self.worker.error.connect(self._on_error)
-        self.worker.start()
+        # Get subtree
+        tree = self.tree_builder.get_tree()
+        subtree = self._find_subtree(tree, folder)
+        if not subtree:
+            return
 
-    def _on_folder_loaded(self, entries):
-        """Handle completion of folder loading."""
-        dirs = []
-        files = []
+        folders = sorted(subtree.get("folders", {}).keys())
+        files = sorted(subtree.get("files", []))
 
-        valid_entries = [entry for entry in entries if entry]
-
-        spec = self._get_gitignore_spec_for_path(self.current_folder or "")
-
-        for entry in valid_entries:
-            if self.current_folder is None:
-                continue
-            full_path = os.path.join(self.current_folder, entry)
-            rel_path = os.path.relpath(full_path, start=self.current_folder)
-            if is_ignored(rel_path, spec):
-                continue
-            if full_path not in self.deleted_paths:
-                if os.path.isdir(full_path):
-                    if not self.hide_empty_folders or not is_folder_empty(
-                        full_path, self.text_only, self.deleted_paths
-                    ):
-                        dirs.append(full_path)
-                elif not self.text_only or is_text_file(full_path):
-                    files.append(full_path)
-
-        dirs.sort()
-        files.sort()
-
-        for full_path in dirs + files:
-            item = FileListItem(full_path)
+        for path in folders + files:
+            item = FileListItem(path)
             self.file_list.addItem(item)
             self.file_list.setItemWidget(item, item.content_widget)
-            self.added_paths[full_path] = item
+            self.added_paths[path] = item
 
         if self.file_list.count() > (1 if self.nav_stack else 0):
             self.file_list.setCurrentRow(1 if self.nav_stack else 0)
@@ -225,6 +175,21 @@ class FileManager:
         # Calculate token counts if enabled
         if self.show_token_count:
             self.calculate_token_counts()
+
+    def _find_subtree(self, tree, folder_path):
+        """
+        Find subtree dict for a given folder path.
+        """
+        if not tree or not folder_path:
+            return None
+        if folder_path in tree.get("folders", {}):
+            return tree["folders"][folder_path]
+        # Search recursively
+        for subfolder, subtree in tree.get("folders", {}).items():
+            result = self._find_subtree(subtree, folder_path)
+            if result:
+                return result
+        return None
 
     def _on_error(self, error_message):
         """Handle file system operation errors."""
@@ -238,6 +203,7 @@ class FileManager:
         self.base_paths = set()
         self.current_folder = None
         self.nav_stack = []
+        self.tree_builder = None
 
     def list_key_press_event(self, event: QKeyEvent):
         """Handle key press events in the list widget."""
@@ -431,37 +397,10 @@ class FileManager:
                 self.show_folder(path)
 
     def get_all_included_files(self):
-        """Collect all included file paths currently visible in the list, respecting .gitignore."""
-        included_files = []
-
-        def collect_files_from_folder(folder_path):
-            try:
-                entries = os.listdir(folder_path)
-            except Exception:
-                return
-            spec = self._get_gitignore_spec_for_path(folder_path)
-            for entry in entries:
-                full_path = os.path.join(folder_path, entry)
-                rel_path = os.path.relpath(full_path, start=folder_path)
-                if is_ignored(rel_path, spec):
-                    continue
-                if full_path in self.deleted_paths:
-                    continue
-                if os.path.isdir(full_path):
-                    collect_files_from_folder(full_path)
-                elif not self.text_only or is_text_file(full_path):
-                    included_files.append(full_path)
-
-        # For each base path, recurse if folder, else add file
-        for path in self.base_paths:
-            if path in self.deleted_paths:
-                continue
-            if os.path.isdir(path):
-                collect_files_from_folder(path)
-            elif not self.text_only or is_text_file(path):
-                included_files.append(path)
-
-        return included_files
+        """Return the cached flat list of included files."""
+        if self.tree_builder:
+            return self.tree_builder.get_flat_file_list()
+        return []
 
     def calculate_token_counts(self):
         """Calculate token counts for all visible items asynchronously."""
