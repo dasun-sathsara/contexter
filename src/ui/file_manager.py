@@ -176,13 +176,34 @@ class FileManager:
 
     def list_key_press_event(self, event: QKeyEvent):
         """Handle key press events in the list widget."""
-        if event.key() == Qt.Key.Key_Delete:
+        key = event.key()
+        text = event.text()
+
+        # Track 'd' press state
+        if not hasattr(self, "_d_pressed_once"):
+            self._d_pressed_once = False
+
+        if text == 'd':
+            if self._d_pressed_once:
+                # Second 'd' press: delete selected items
+                self.remove_selected_items()
+                self._d_pressed_once = False
+                return
+            else:
+                # First 'd' press: set flag and wait for next key
+                self._d_pressed_once = True
+                return
+        else:
+            # Reset 'd' press flag on any other key
+            self._d_pressed_once = False
+
+        if key == Qt.Key.Key_Delete:
             self.remove_selected_items()
-        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             selected_item = self.file_list.currentItem()
             if selected_item:
                 self.on_item_double_clicked(selected_item)
-        elif event.key() == Qt.Key.Key_Right:
+        elif key == Qt.Key.Key_Right or text == 'l':
             selected_item = self.file_list.currentItem()
             try:
                 if (
@@ -199,7 +220,7 @@ class FileManager:
                     event.ignore()
             except (RuntimeError, AttributeError):
                 event.ignore()
-        elif event.key() == Qt.Key.Key_Left:
+        elif key == Qt.Key.Key_Left or text == 'h':
             if self.nav_stack:
                 prev_state = self.nav_stack.pop()
                 if isinstance(prev_state, (list, set)):
@@ -210,6 +231,18 @@ class FileManager:
                     self.show_initial_items()
             else:
                 event.ignore()
+        elif text == 'j':
+            current_row = self.file_list.currentRow()
+            if current_row < self.file_list.count() - 1:
+                self.file_list.setCurrentRow(current_row + 1)
+        elif text == 'k':
+            current_row = self.file_list.currentRow()
+            if current_row > 0:
+                self.file_list.setCurrentRow(current_row - 1)
+        elif text == 'y':
+            # Trigger generate output
+            if hasattr(self.parent, "generate_paths_text"):
+                self.parent.generate_paths_text()
         else:
             QListWidget.keyPressEvent(self.file_list, event)
 
