@@ -1,3 +1,4 @@
+import textwrap
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -147,8 +148,11 @@ class FileDropApp(QMainWindow):
         # Show the loading indicator
         self.loading_label.setVisible(True)
 
+        # Save file list for later use in _on_merge_completed
+        self._merge_files_list = list(files)
+
         self.worker = FileSystemWorker("merge_files", files)
-        self.worker.finished.connect(self._on_merge_completed)
+        self.worker.finished.connect(self._on_merge_completed_wrapper)
         self.worker.progress.connect(
             lambda value: None
         )  # Placeholder for progress updates
@@ -160,6 +164,10 @@ class FileDropApp(QMainWindow):
         # Hide the loading indicator
         self.loading_label.setVisible(False)
 
+        # The worker returns the merged content of all files as one string.
+        # To improve organization, we need to split it back into per-file content.
+        # But since the worker returns a single merged string, we can't do that here.
+        # So just copy the merged text as-is.
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(text)
@@ -171,3 +179,26 @@ class FileDropApp(QMainWindow):
         self.loading_label.setVisible(False)
 
         self.statusBar().showMessage(f"Error: {error_message}", 5000)
+    def _on_merge_completed_wrapper(self, merged_text):
+        """Reorganize merged text by file and copy to clipboard."""
+        # Hide the loading indicator
+        self.loading_label.setVisible(False)
+
+        # Compose output with file headers
+        output_lines = ["===== Combined File Contents =====\n"]
+        offset = 0
+        for idx, file_path in enumerate(self._merge_files_list, 1):
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+            except Exception:
+                content = "[Error reading file]"
+            output_lines.append(f"\n--- File {idx}: {file_path} ---\n")
+            output_lines.append(content.strip() + "\n")
+        output_lines.append("\n===== End =====\n")
+        improved_text = "\n".join(output_lines)
+
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(improved_text)
+        self.statusBar().showMessage("File contents copied to clipboard.", 3000)

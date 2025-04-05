@@ -431,10 +431,37 @@ class FileManager:
                 self.show_folder(path)
 
     def get_all_included_files(self):
-        """Collect all included file paths recursively."""
-        return get_all_files_recursive(
-            self.base_paths, self.deleted_paths, self.text_only
-        )
+        """Collect all included file paths currently visible in the list, respecting .gitignore."""
+        included_files = []
+
+        def collect_files_from_folder(folder_path):
+            try:
+                entries = os.listdir(folder_path)
+            except Exception:
+                return
+            spec = self._get_gitignore_spec_for_path(folder_path)
+            for entry in entries:
+                full_path = os.path.join(folder_path, entry)
+                rel_path = os.path.relpath(full_path, start=folder_path)
+                if is_ignored(rel_path, spec):
+                    continue
+                if full_path in self.deleted_paths:
+                    continue
+                if os.path.isdir(full_path):
+                    collect_files_from_folder(full_path)
+                elif not self.text_only or is_text_file(full_path):
+                    included_files.append(full_path)
+
+        # For each base path, recurse if folder, else add file
+        for path in self.base_paths:
+            if path in self.deleted_paths:
+                continue
+            if os.path.isdir(path):
+                collect_files_from_folder(path)
+            elif not self.text_only or is_text_file(path):
+                included_files.append(path)
+
+        return included_files
 
     def calculate_token_counts(self):
         """Calculate token counts for all visible items asynchronously."""
