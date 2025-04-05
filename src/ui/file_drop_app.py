@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTabWidget,
     QProgressDialog,
+    QStatusBar,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -30,6 +31,10 @@ class FileDropApp(QMainWindow):
 
         # Initialize theme state before setup_ui
         self._is_dark_mode = False
+
+        # Create status bar
+        self.statusBar().showMessage("")
+
         self.setup_ui()
 
         # Apply initial theme
@@ -61,20 +66,18 @@ class FileDropApp(QMainWindow):
         self.file_list = QListWidget()
         self.file_manager = FileManager(self.file_list, self)
 
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        self.generate_button = QPushButton("Generate")
-        self.generate_button.clicked.connect(self.generate_paths_text)
-        button_layout.addWidget(self.generate_button)
-        self.clear_button = QPushButton("Clear List")
-        self.clear_button.clicked.connect(self.file_manager.clear_list)
-        button_layout.addWidget(self.clear_button)
-
         main_layout.addWidget(header_label)
         main_layout.addWidget(self.drop_zone)
         main_layout.addWidget(list_header)
         main_layout.addWidget(self.file_list)
-        main_layout.addLayout(button_layout)
+
+        # Add a keyboard shortcut hint label
+        shortcut_label = QLabel(
+            "Vim Shortcuts: v (visual mode), V (select all lines), y (copy), C (clear list), d+d (delete), Esc (exit mode)"
+        )
+        shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        shortcut_label.setStyleSheet("color: #666; font-size: 10.5px;")
+        main_layout.addWidget(shortcut_label)
 
         # Add a loading indicator
         self.loading_label = QLabel("Processing...")
@@ -119,10 +122,12 @@ class FileDropApp(QMainWindow):
             self.file_manager.show_folder(self.file_manager.current_folder)
         else:
             self.file_manager.show_initial_items()
-            
+
     def on_show_token_count_changed(self, state):
         """Handle change in the show-token-count checkbox state."""
-        self.file_manager.on_show_token_count_changed(state == Qt.CheckState.Checked.value)
+        self.file_manager.on_show_token_count_changed(
+            state == Qt.CheckState.Checked.value
+        )
 
     def toggle_dark_mode(self, state):
         """Toggle between light and dark mode."""
@@ -157,11 +162,11 @@ class FileDropApp(QMainWindow):
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(text)
-        print("File contents copied to clipboard.")
+        self.statusBar().showMessage("File contents copied to clipboard.", 3000)
 
     def _on_error(self, error_message):
         """Handle file system operation errors."""
         # Hide the loading indicator
         self.loading_label.setVisible(False)
 
-        print(f"Error: {error_message}")
+        self.statusBar().showMessage(f"Error: {error_message}", 5000)

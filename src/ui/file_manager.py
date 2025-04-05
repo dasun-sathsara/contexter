@@ -1,7 +1,7 @@
 import os
-from PyQt6.QtWidgets import QListWidget, QApplication
+from PyQt6.QtWidgets import QListWidget, QApplication, QLabel, QStatusBar
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QKeyEvent, QColor
 from PyQt6.QtWidgets import QStyle
 from typing import Set, Dict, Optional, List
 
@@ -15,6 +15,7 @@ from src.utils.file_operations import (
 
 
 from typing import cast
+
 
 class FileManager:
     def __init__(self, list_widget: QListWidget, parent=None):
@@ -31,6 +32,18 @@ class FileManager:
         self.worker = None
         self.progress_dialog = None
         self.token_workers = []
+
+        # Vim visual mode state
+        self.visual_mode = False
+        self.visual_anchor_row: Optional[int] = None
+        self.status_bar: Optional[QStatusBar] = None
+        self.status_label: Optional[QLabel] = None
+
+        # Visual mode highlight color
+        self.visual_mode_highlight_color = QColor(
+            173, 216, 230, 100
+        )  # Light blue with transparency
+        self.visual_mode_text_color = QColor(0, 0, 139)  # Dark blue
 
         # Enable HTML rendering in list widget
         self.file_list.setTextElideMode(Qt.TextElideMode.ElideRight)
@@ -49,6 +62,27 @@ class FileManager:
 
         self.file_list.keyPressEvent = new_key_press  # type: ignore
         self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
+
+        # Create status bar for visual mode indication
+        self._setup_status_bar()
+
+    def _setup_status_bar(self):
+        """Set up a status bar to display mode information"""
+        if self.parent and hasattr(self.parent, "statusBar"):
+            self.status_bar = self.parent.statusBar()
+            self.status_label = QLabel()
+            self.status_bar.addPermanentWidget(self.status_label)
+            self.status_label.hide()
+
+    def _update_status_bar(self):
+        """Update status bar with current mode information"""
+        if self.status_label:
+            if self.visual_mode:
+                self.status_label.setText("visual")
+                self.status_label.show()
+            else:
+                self.status_label.setText("")
+                self.status_label.hide()
 
     def add_files(self, paths):
         """Add files and folders to the list."""
@@ -183,7 +217,22 @@ class FileManager:
         if not hasattr(self, "_d_pressed_once"):
             self._d_pressed_once = False
 
-        if text == 'd':
+        if text == "v":
+            # Toggle visual mode
+            self.toggle_visual_mode()
+            return
+
+        if text == "V":
+            # Line visual mode (select all lines, similar to Vim's shift+V)
+            self.toggle_visual_mode(True)
+            return
+
+        if text == "C":
+            # Clear the list (new shortcut)
+            self.clear_list()
+            return
+
+        if text == "d":
             if self._d_pressed_once:
                 # Second 'd' press: delete selected items
                 self.remove_selected_items()
@@ -197,13 +246,23 @@ class FileManager:
             # Reset 'd' press flag on any other key
             self._d_pressed_once = False
 
+        if key == Qt.Key.Key_Escape:
+            # Exit visual mode with Escape
+            if self.visual_mode:
+                self.exit_visual_mode()
+                return
+
         if key == Qt.Key.Key_Delete:
             self.remove_selected_items()
+            if self.visual_mode:
+                self.exit_visual_mode()
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             selected_item = self.file_list.currentItem()
             if selected_item:
                 self.on_item_double_clicked(selected_item)
-        elif key == Qt.Key.Key_Right or text == 'l':
+                if self.visual_mode:
+                    self.exit_visual_mode()
+        elif key == Qt.Key.Key_Right or text == "l":
             selected_item = self.file_list.currentItem()
             try:
                 if (
@@ -216,11 +275,14 @@ class FileManager:
                     self.file_list.setFocus()
                     if self.file_list.count() > (1 if self.nav_stack else 0):
                         self.file_list.setCurrentRow(1 if self.nav_stack else 0)
+                        if self.visual_mode:
+                            self.visual_anchor_row = self.file_list.currentRow()
+                            self._update_visual_selection()
                 else:
                     event.ignore()
             except (RuntimeError, AttributeError):
                 event.ignore()
-        elif key == Qt.Key.Key_Left or text == 'h':
+        elif key == Qt.Key.Key_Left or text == "h":
             if self.nav_stack:
                 prev_state = self.nav_stack.pop()
                 if isinstance(prev_state, (list, set)):
@@ -229,22 +291,79 @@ class FileManager:
                     self.show_folder(prev_state)
                 else:
                     self.show_initial_items()
+
+                # Update visual selection anchor if in visual mode
+                if self.visual_mode:
+                    self.visual_anchor_row = 0
+                    self._update_visual_selection()
             else:
                 event.ignore()
-        elif text == 'j':
+        elif text == "j":
             current_row = self.file_list.currentRow()
             if current_row < self.file_list.count() - 1:
                 self.file_list.setCurrentRow(current_row + 1)
-        elif text == 'k':
+                if self.visual_mode:
+                    self._update_visual_selection()
+        elif text == "k":
             current_row = self.file_list.currentRow()
             if current_row > 0:
                 self.file_list.setCurrentRow(current_row - 1)
-        elif text == 'y':
-            # Trigger generate output
+                if self.visual_mode:
+                    self._update_visual_selection()
+        elif text == "g":
+            # Go to top
+            if self.file_list.count() > 0:
+                self.file_list.setCurrentRow(0)
+                if self.visual_mode:
+                    self._update_visual_selection()
+        elif text == "G":
+            # Go to bottom
+            if self.file_list.count() > 0:
+                self.file_list.setCurrentRow(self.file_list.count() - 1)
+                if self.visual_mode:
+                    self._update_visual_selection()
+        elif text == "y":
+            # Yank (copy) selected files
             if hasattr(self.parent, "generate_paths_text"):
                 self.parent.generate_paths_text()
+                # Exit visual mode after yanking
+                if self.visual_mode:
+                    self.exit_visual_mode()
         else:
             QListWidget.keyPressEvent(self.file_list, event)
+
+    def toggle_visual_mode(self, select_all=False):
+        """Toggle visual selection mode"""
+        self.visual_mode = not self.visual_mode
+
+        if self.visual_mode:
+            # Enter visual mode
+            current_row = self.file_list.currentRow()
+            self.visual_anchor_row = current_row if not select_all else 0
+            self.file_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+
+            # Select current row or all rows
+            self.file_list.clearSelection()
+            if select_all:
+                # Select all rows from current to end
+                self.file_list.setCurrentRow(self.file_list.count() - 1)
+            else:
+                # Select only current row
+                self.file_list.setCurrentRow(current_row)
+
+            self._update_visual_selection()
+        else:
+            # Exit visual mode
+            self.exit_visual_mode()
+
+        self._update_status_bar()
+
+    def exit_visual_mode(self):
+        """Exit visual selection mode"""
+        self.visual_mode = False
+        self.visual_anchor_row = None
+        self.file_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._update_status_bar()
 
     def remove_selected_items(self):
         """Remove selected items from the list."""
@@ -347,3 +466,25 @@ class FileManager:
                         update_style(is_selected())
                 except AttributeError:
                     pass
+
+    def _update_visual_selection(self):
+        """Update selection range in visual mode."""
+        if not self.visual_mode or self.visual_anchor_row is None:
+            return
+
+        current_row = self.file_list.currentRow()
+        start = min(self.visual_anchor_row, current_row)
+        end = max(self.visual_anchor_row, current_row)
+
+        self.file_list.clearSelection()
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if item:
+                item.setSelected(start <= i <= end)
+
+        # Show selection count in status bar but make it less prominent
+        selected_count = len(self.file_list.selectedItems())
+        if self.status_label and selected_count > 0:
+            self.status_label.setText(f"visual: {selected_count}")
+        else:
+            self.status_label.setText("visual")

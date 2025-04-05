@@ -89,6 +89,18 @@ class ThemeManager:
             QCheckBox::indicator:hover {
                 border-color: #4a86e8;
             }
+            QStatusBar {
+                background-color: #f0f0f0;
+                color: #000000;
+                border-top: 1px solid #e0e0e0;
+            }
+            QStatusBar QLabel {
+                background-color: transparent;
+                color: #4a86e8;
+                padding: 2px 4px;
+                font-size: 12px;
+                font-weight: normal;
+            }
         """)
 
     @staticmethod
@@ -171,5 +183,17 @@ class ThemeManager:
             }
             QCheckBox::indicator:hover {
                 border-color: #007acc;
+            }
+            QStatusBar {
+                background-color: #252526;
+                color: #ffffff;
+                border-top: 1px solid #3e3e40;
+            }
+            QStatusBar QLabel {
+                background-color: transparent;
+                color: #007acc;
+                padding: 2px 4px;
+                font-size: 10px;
+                font-weight: normal;
             }
         """)

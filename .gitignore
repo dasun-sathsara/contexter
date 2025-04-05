@@ -10,3 +10,4 @@ ENV/
 
 *.txt
 p.md
+.aider*
