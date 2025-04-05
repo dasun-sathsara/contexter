@@ -27,7 +27,8 @@ class FileDropApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("File Drop Interface")
-        self.setMinimumSize(500, 500)
+        self.resize(1000, 800)
+        self.setMinimumSize(800, 600)
 
         # Initialize theme state before setup_ui
         self._is_dark_mode = False

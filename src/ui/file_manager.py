@@ -13,6 +13,7 @@ from src.utils.file_operations import (
     is_folder_empty,
 )
 
+from src.utils.gitignore import load_gitignore_patterns, is_ignored
 
 from typing import cast
 
@@ -38,6 +39,9 @@ class FileManager:
         self.visual_anchor_row: Optional[int] = None
         self.status_bar: Optional[QStatusBar] = None
         self.status_label: Optional[QLabel] = None
+
+        # .gitignore PathSpec cache
+        self.gitignore_specs: Dict[str, Optional[object]] = {}
 
         # Visual mode highlight color
         self.visual_mode_highlight_color = QColor(
@@ -91,6 +95,9 @@ class FileManager:
 
         for path in paths:
             self.base_paths.add(path)
+            # Load .gitignore for each base path
+            spec = load_gitignore_patterns(path)
+            self.gitignore_specs[path] = spec
 
         self.show_initial_items()
 
@@ -105,6 +112,21 @@ class FileManager:
 
         folders = [path for path in self.base_paths if path and os.path.isdir(path)]
         files = [path for path in self.base_paths if path and not os.path.isdir(path)]
+
+        # Filter ignored
+        filtered_folders = []
+        for folder in folders:
+            spec = self._get_gitignore_spec_for_path(folder)
+            if not is_ignored(os.path.relpath(folder, start=os.path.dirname(folder)), spec):
+                filtered_folders.append(folder)
+        folders = filtered_folders
+
+        filtered_files = []
+        for file in files:
+            spec = self._get_gitignore_spec_for_path(file)
+            if not is_ignored(os.path.relpath(file, start=os.path.dirname(file)), spec):
+                filtered_files.append(file)
+        files = filtered_files
 
         if self.text_only:
             files = [path for path in files if is_text_file(path)]
@@ -140,6 +162,10 @@ class FileManager:
         self.file_list.clear()
         self.added_paths.clear()
 
+        # Load .gitignore for this folder
+        spec = load_gitignore_patterns(folder)
+        self.gitignore_specs[folder] = spec
+
         if self.nav_stack:
             # Create back item using FileListItem for consistent styling
             back_item = FileListItem("..")
@@ -149,7 +175,7 @@ class FileManager:
             style = QApplication.style()
             if style is not None:
                 back_item.setIcon(
-                    style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft)
+                    style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
                 )
             self.file_list.addItem(back_item)
             self.file_list.setItemWidget(back_item, back_item.content_widget)
@@ -166,10 +192,15 @@ class FileManager:
 
         valid_entries = [entry for entry in entries if entry]
 
+        spec = self._get_gitignore_spec_for_path(self.current_folder or "")
+
         for entry in valid_entries:
             if self.current_folder is None:
                 continue
             full_path = os.path.join(self.current_folder, entry)
+            rel_path = os.path.relpath(full_path, start=self.current_folder)
+            if is_ignored(rel_path, spec):
+                continue
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
                     if not self.hide_empty_folders or not is_folder_empty(
@@ -488,3 +519,13 @@ class FileManager:
             self.status_label.setText(f"visual: {selected_count}")
         else:
             self.status_label.setText("visual")
+    def _get_gitignore_spec_for_path(self, path: str):
+        """Return the PathSpec for the closest parent directory"""
+        if not path:
+            return None
+        path = os.path.abspath(path)
+        candidates = sorted(self.gitignore_specs.keys(), key=lambda p: -len(p))
+        for base in candidates:
+            if path.startswith(os.path.abspath(base)):
+                return self.gitignore_specs.get(base)
+        return None
