@@ -154,7 +154,9 @@ class FileDropApp(QMainWindow):
         # Hide the loading indicator
         self.loading_label.setVisible(False)
 
-        QApplication.clipboard().setText(text)
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
         print("File contents copied to clipboard.")
 
     def _on_error(self, error_message):

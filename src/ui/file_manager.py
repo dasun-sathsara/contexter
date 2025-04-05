@@ -14,6 +14,8 @@ from src.utils.file_operations import (
 )
 
 
+from typing import cast
+
 class FileManager:
     def __init__(self, list_widget: QListWidget, parent=None):
         self.file_list = list_widget
@@ -35,7 +37,17 @@ class FileManager:
         self.file_list.setWordWrap(False)
         # Connect list widget signals
         self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
-        self.file_list.keyPressEvent = self.list_key_press_event
+        # Override keyPressEvent with compatible signature
+        orig_key_press = self.file_list.keyPressEvent
+
+        def new_key_press(e: Optional[QKeyEvent]):
+            if e is not None:
+                self.list_key_press_event(e)
+            else:
+                if orig_key_press:
+                    orig_key_press(e)
+
+        self.file_list.keyPressEvent = new_key_press  # type: ignore
         self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
 
     def add_files(self, paths):
@@ -98,11 +110,13 @@ class FileManager:
             # Create back item using FileListItem for consistent styling
             back_item = FileListItem("..")
             back_item.is_dir = True
-            back_item.path = None
+            back_item.path = ".."  # avoid None assignment
             back_item.setFlags(back_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            back_item.setIcon(
-                QApplication.style().standardIcon(QStyle.StandardPixmap.SP_ArrowLeft)
-            )
+            style = QApplication.style()
+            if style is not None:
+                back_item.setIcon(
+                    style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft)
+                )
             self.file_list.addItem(back_item)
             self.file_list.setItemWidget(back_item, back_item.content_widget)
 
@@ -119,6 +133,8 @@ class FileManager:
         valid_entries = [entry for entry in entries if entry]
 
         for entry in valid_entries:
+            if self.current_folder is None:
+                continue
             full_path = os.path.join(self.current_folder, entry)
             if full_path not in self.deleted_paths:
                 if os.path.isdir(full_path):
@@ -172,7 +188,7 @@ class FileManager:
                 if (
                     selected_item
                     and hasattr(selected_item, "is_dir")
-                    and selected_item.is_dir
+                    and getattr(selected_item, "is_dir", False)
                     and selected_item.text() != ".."
                 ):
                     self.on_item_double_clicked(selected_item)
@@ -188,8 +204,10 @@ class FileManager:
                 prev_state = self.nav_stack.pop()
                 if isinstance(prev_state, (list, set)):
                     self.show_initial_items()
-                else:
+                elif prev_state is not None:
                     self.show_folder(prev_state)
+                else:
+                    self.show_initial_items()
             else:
                 event.ignore()
         else:
@@ -199,10 +217,11 @@ class FileManager:
         """Remove selected items from the list."""
         selected_items = self.file_list.selectedItems()[::-1]
         for item in selected_items:
-            if item.path is not None:
-                self.deleted_paths.add(item.path)
-                if item.path in self.added_paths:
-                    del self.added_paths[item.path]
+            path = getattr(item, "path", None)
+            if path:
+                self.deleted_paths.add(path)
+                if path in self.added_paths:
+                    del self.added_paths[path]
                 row = self.file_list.row(item)
                 self.file_list.takeItem(row)
 
@@ -213,16 +232,20 @@ class FileManager:
                 prev_state = self.nav_stack.pop()
                 if isinstance(prev_state, (list, set)):
                     self.show_initial_items()
-                else:
+                elif prev_state is not None:
                     self.show_folder(prev_state)
+                else:
+                    self.show_initial_items()
             return
 
-        if item.is_dir:
+        if hasattr(item, "is_dir") and getattr(item, "is_dir", False):
             if self.current_folder:
                 self.nav_stack.append(self.current_folder)
             else:
                 self.nav_stack.append(None)
-            self.show_folder(item.path)
+            path = getattr(item, "path", None)
+            if path is not None:
+                self.show_folder(path)
 
     def get_all_included_files(self):
         """Collect all included file paths recursively."""
@@ -278,5 +301,16 @@ class FileManager:
         # Update all items to reflect their current selection state
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
-            if hasattr(item, "update_widget_style"):
-                item.update_widget_style(item.isSelected())
+            # Defensive: check update_widget_style exists on item
+            if (
+                item is not None
+                and hasattr(item, "update_widget_style")
+                and callable(getattr(item, "update_widget_style", None))
+            ):
+                try:
+                    update_style = getattr(item, "update_widget_style", None)
+                    is_selected = getattr(item, "isSelected", None)
+                    if callable(update_style) and callable(is_selected):
+                        update_style(is_selected())
+                except AttributeError:
+                    pass

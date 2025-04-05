@@ -1,4 +1,5 @@
 import os
+from typing import Optional, cast
 from PyQt6.QtWidgets import (
     QApplication,
     QListWidgetItem,
@@ -13,12 +14,12 @@ from PyQt6.QtCore import Qt
 class FileListItem(QListWidgetItem):
     """Custom list item to display file/folder info."""
 
-    def __init__(self, path, parent=None):
+    def __init__(self, path: str, parent: Optional[QListWidgetItem] = None):
         super().__init__(parent)
-        self.path = path
-        self.name = os.path.basename(path)
-        self.is_dir = os.path.isdir(path)
-        self.token_count = None
+        self.path: str = path
+        self.name: str = os.path.basename(path)
+        self.is_dir: bool = os.path.isdir(path)
+        self.token_count: Optional[int] = None
 
         # Create widget to hold the content
         self.content_widget = QWidget()
@@ -42,14 +43,16 @@ class FileListItem(QListWidgetItem):
         layout.addWidget(self.token_label)
 
         # Set appropriate icon
-        if self.is_dir:
-            self.setIcon(
-                QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-            )
-        else:
-            self.setIcon(
-                QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
-            )
+        style = QApplication.style()
+        if style is not None:
+            if self.is_dir:
+                self.setIcon(
+                    style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                )
+            else:
+                self.setIcon(
+                    style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+                )
 
         self.setToolTip(path)
         self.update_display_text()
@@ -72,15 +75,17 @@ class FileListItem(QListWidgetItem):
         else:
             self.token_label.setText("")
 
-    def update_widget_style(self, is_selected):
+    def update_widget_style(self, is_selected: bool):
         """Update the widget style based on selection state."""
         # Use dynamic property to handle selection state
         self.content_widget.setProperty("selected", is_selected)
         # Force style refresh
-        self.content_widget.style().unpolish(self.content_widget)
-        self.content_widget.style().polish(self.content_widget)
+        style = self.content_widget.style()
+        if style is not None:
+            style.unpolish(self.content_widget)
+            style.polish(self.content_widget)
 
-    def set_token_count(self, count):
+    def set_token_count(self, count: int):
         """Set the token count and update display."""
         self.token_count = count
         self.update_display_text()

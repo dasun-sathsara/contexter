@@ -26,7 +26,9 @@ def count_tokens_in_file(file_path: str) -> int:
         return 0
 
 
-def count_tokens_in_folder(folder_path: str, text_only: bool = True, deleted_paths: Set[str] = None) -> int:
+from typing import Optional, Set
+
+def count_tokens_in_folder(folder_path: str, text_only: bool = True, deleted_paths: Optional[Set[str]] = None) -> int:
     """
     Count the total number of tokens in all files in a folder recursively.
     
