@@ -1,306 +1,421 @@
 import os
 import mimetypes
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, Set, Optional, List, Any, Tuple
 
 from src.utils.gitignore import load_gitignore_patterns, is_ignored
 
+# Centralized MimeTypes initialization for potential efficiency
+mimetypes.init()
 
-def is_text_file(file_path):
+# Set of common text file extensions for quick checking
+TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".html",
+    ".htm",
+    ".css",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".bat",
+    ".ps1",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".java",
+    ".php",
+    ".rb",
+    ".pl",
+    ".rs",
+    ".go",
+    ".sql",
+    ".csv",
+    ".log",
+    ".gitignore",
+    ".gitattributes",
+    ".dockerfile",
+    "Dockerfile",
+    ".env",
+    ".properties",
+    ".lua",
+    ".r",
+    ".dart",
+    ".kt",
+    ".swift",
+    ".scala",
+    ".tex",
+    ".vbs",
+    ".asp",
+    ".aspx",
+    ".jsp",
+    ".tpl",
+    ".erb",
+    # Add more as needed
+}
+
+# Cache for is_text_file results to avoid redundant checks within a run
+_is_text_file_cache: Dict[str, bool] = {}
+_is_text_file_lock = threading.Lock()
+
+
+def is_text_file(file_path: str) -> bool:
     """
-    Determine if a file is a text file based on its content and extension.
+    Determine if a file is likely a text file based on extension, mime type,
+    and content inspection. Caches results per file path.
 
     Args:
-        file_path (str): Path to the file
+        file_path (str): Path to the file.
 
     Returns:
-        bool: True if the file is likely a text file, False otherwise
+        bool: True if the file is likely a text file, False otherwise.
     """
-    # Check common text file extensions
-    text_extensions = {
-        ".txt",
-        ".md",
-        ".py",
-        ".js",
-        ".html",
-        ".css",
-        ".json",
-        ".xml",
-        ".csv",
-        ".yml",
-        ".yaml",
-        ".toml",
-        ".ini",
-        ".cfg",
-        ".conf",
-        ".sh",
-        ".bat",
-        ".ps1",
-        ".c",
-        ".cpp",
-        ".h",
-        ".hpp",
-        ".java",
-        ".php",
-        ".rb",
-        ".pl",
-        ".rs",
-        ".go",
-        ".ts",
-        ".jsx",
-        ".tsx",
-    }
+    # Check cache first
+    with _is_text_file_lock:
+        if file_path in _is_text_file_cache:
+            return _is_text_file_cache[file_path]
 
-    _, ext = os.path.splitext(file_path.lower())
-    if ext in text_extensions:
-        return True
-
-    # Check mime type
-    mime_type, _ = mimetypes.guess_type(file_path)
-    if mime_type and mime_type.startswith("text/"):
-        return True
-
-    # Try to read the file as text
+    result = False
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            # Read first 8KB of the file to check if it's text
-            sample = f.read(8192)
-            # If sample contains null bytes, it's likely binary
-            if "\0" in sample:
-                return False
-            # If more than 30% non-ASCII chars, probably binary
-            non_ascii = sum(1 for c in sample if ord(c) > 127)
-            if non_ascii > 0.3 * len(sample):
-                return False
-            return True
-    except UnicodeDecodeError:
-        # Failed to decode as UTF-8
-        return False
-    except Exception:
-        # Any other error, default to non-text
-        return False
+        # 1. Check by extension (common cases)
+        _, ext = os.path.splitext(file_path.lower())
+        if ext in TEXT_EXTENSIONS:
+            result = True
+        else:
+            # 2. Check by mime type
+            mime_type, encoding = mimetypes.guess_type(file_path)
+            if mime_type and mime_type.startswith("text/"):
+                result = True
+            elif (
+                encoding
+            ):  # Sometimes encoding implies text (e.g., gzip text) - debatable
+                pass  # Let content check decide
+
+            # 3. Check content if unsure (avoid for known binary mimes if possible)
+            if not result and (
+                not mime_type
+                or not (
+                    "binary" in mime_type
+                    or "octet-stream" in mime_type
+                    or "application" in mime_type
+                )
+            ):
+                # Read a small chunk to detect binary content (like null bytes)
+                with open(file_path, "rb") as f:
+                    chunk = f.read(8192)  # Read 8KB
+                    if (
+                        b"\x00" in chunk
+                    ):  # Presence of NULL bytes strongly indicates binary
+                        result = False
+                    else:
+                        # Try decoding a small part as UTF-8 as a fallback check
+                        try:
+                            chunk.decode("utf-8", errors="strict")
+                            result = True  # Decoded successfully, likely text
+                        except UnicodeDecodeError:
+                            result = False  # Failed to decode, likely binary
+    except IOError:  # File might not exist or be readable
+        result = False
+    except Exception as e:  # Catch other unexpected errors
+        print(f"Warning: Error checking file type for {file_path}: {e}")
+        result = False  # Default to non-text on error
+
+    # Update cache
+    with _is_text_file_lock:
+        _is_text_file_cache[file_path] = result
+
+    return result
 
 
-def _check_folder_empty(folder_path, text_only, deleted_paths):
-    """
-    Helper function to check if a folder is empty, suitable for parallel execution.
-    """
-    try:
-        entries = os.listdir(folder_path)
-    except Exception:
-        return True
-
-    for entry in entries:
-        full_path = os.path.join(folder_path, entry)
-        if full_path in deleted_paths:
-            continue
-
-        if os.path.isfile(full_path):
-            if not text_only or is_text_file(full_path):
-                return False
-        elif os.path.isdir(full_path):
-            if not is_folder_empty(full_path, text_only, deleted_paths):
-                return False
-
-    return True
+def clear_text_file_cache():
+    """Clears the cache used by is_text_file."""
+    global _is_text_file_cache
+    with _is_text_file_lock:
+        _is_text_file_cache = {}
 
 
-def is_folder_empty(folder_path, text_only=False, deleted_paths=None):
-    """
-    Check if a folder is empty or contains only empty subfolders.
-
-    Args:
-        folder_path (str): Path to the folder to check
-        text_only (bool): If True, consider a folder empty if it contains no text files
-        deleted_paths (set): Set of paths that have been deleted/excluded
-
-    Returns:
-        bool: True if the folder is empty (or has only empty subfolders), False otherwise
-    """
-    if deleted_paths is None:
-        deleted_paths = set()
-
-    return _check_folder_empty(folder_path, text_only, deleted_paths)
-
-
-def _collect_files_worker(args):
-    """
-    Worker function for collecting files in parallel.
-    """
-    folder, all_files, deleted_paths, text_only = args
-    try:
-        entries = os.listdir(folder)
-        result = []
-        for entry in entries:
-            full_path = os.path.join(folder, entry)
-            if full_path not in deleted_paths:
-                if os.path.isfile(full_path):
-                    if not text_only or is_text_file(full_path):
-                        result.append(full_path)
-                elif os.path.isdir(full_path):
-                    subdir_files = _collect_files_worker(
-                        (full_path, all_files, deleted_paths, text_only)
-                    )
-                    result.extend(subdir_files)
-        return result
-    except Exception as e:
-        print(f"Error reading folder {folder}: {e}")
-        return []
-
-
-def get_all_files_recursive(base_paths, deleted_paths, text_only=False):
-    """
-    Collect all included file paths recursively, excluding deleted ones.
-    Uses parallel processing for better performance with large directories.
-
-    Args:
-        base_paths (set): Set of base file/folder paths
-        deleted_paths (set): Set of paths that have been deleted/excluded
-        text_only (bool): If True, only include text files
-
-    Returns:
-        list: Sorted list of all file paths
-    """
-    all_files = set()
-    folders_to_process = []
-
-    # Process immediate files and collect folders
-    for path in base_paths:
-        if path not in deleted_paths:
-            if os.path.isfile(path):
-                if not text_only or is_text_file(path):
-                    all_files.add(path)
-            elif os.path.isdir(path):
-                folders_to_process.append(path)
-
-    # Process folders in parallel if there are any
-    if folders_to_process:
-        with ThreadPoolExecutor() as executor:
-            args = [
-                (folder, all_files, deleted_paths, text_only)
-                for folder in folders_to_process
-            ]
-            results = executor.map(_collect_files_worker, args)
-            for result in results:
-                all_files.update(result)
-
-    return sorted(all_files)
-
-
-def merge_file_contents(file_paths):
-    """
-    Merge contents of multiple files with headers.
-
-    Args:
-        file_paths (list): List of file paths to merge
-
-    Returns:
-        str: Merged content of all files
-    """
-    output = []
-    for file_path in file_paths:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            header = f"############## {file_path.replace(os.sep, '/')} ##############"
-            output.append(header)
-            output.append(content)
-            output.append("")
-        except Exception as e:
-            print(f"Error reading file {file_path}: {e}")
-    return "\n".join(output)
+# --- FileTreeBuilder ---
 
 
 class FileTreeBuilder:
     """
-    Centralized, cached recursive file/folder collector with filtering.
+    Builds a nested dictionary representing a file tree structure based on
+    base paths, applying filtering (.gitignore, text only, hide empty)
+    and respecting a set of deleted paths. Caches .gitignore specs.
     """
 
-    def __init__(self, base_paths, text_only=True, hide_empty_folders=True, deleted_paths=None):
-        self.base_paths = set(base_paths)
+    def __init__(
+        self,
+        base_paths: Set[str],
+        text_only: bool = True,
+        hide_empty_folders: bool = True,
+        deleted_paths: Optional[Set[str]] = None,
+    ):
+        self.base_paths = {os.path.abspath(p) for p in base_paths}
         self.text_only = text_only
         self.hide_empty_folders = hide_empty_folders
         self.deleted_paths = deleted_paths or set()
 
         self._lock = threading.Lock()
-        self._cache = None  # Will hold the tree dict
-        self._flat_file_list = None  # Flat list of included files
-        self._gitignore_specs = {}
+        self._tree_cache: Optional[Dict[str, Any]] = None
+        self._flat_file_list_cache: Optional[List[str]] = None
+        self._gitignore_spec_cache: Dict[
+            str, Optional[Any]
+        ] = {}  # Cache for PathSpec objects per directory
+        # Clear file type cache at the start of a build? Or assume it's persistent?
+        clear_text_file_cache()
 
     def build_tree(self):
-        """
-        Build and cache the file tree.
-        """
+        """Builds or rebuilds the file tree structure and caches it."""
         with self._lock:
-            self._cache = {"folders": {}, "files": []}
-            self._flat_file_list = []
+            self._tree_cache = {"folders": {}, "files": []}
+            self._flat_file_list_cache = []
+            self._gitignore_spec_cache = {}  # Clear gitignore cache for rebuild
 
-            for base in self.base_paths:
-                spec = load_gitignore_patterns(base)
-                self._gitignore_specs[base] = spec
+            # Use ThreadPoolExecutor for potentially faster scanning of multiple base paths
+            # Adjust workers based on expected number of base paths vs cores
+            num_workers = min(len(self.base_paths), (os.cpu_count() or 1) * 2)
+            if num_workers <= 1:  # Avoid overhead for single base path
+                results = [self._process_base_path(base) for base in self.base_paths]
+            else:
+                results = []
+                with ThreadPoolExecutor(
+                    max_workers=num_workers, thread_name_prefix="TreeBuilderWorker"
+                ) as executor:
+                    futures = {
+                        executor.submit(self._process_base_path, base): base
+                        for base in self.base_paths
+                    }
+                    for future in as_completed(futures):
+                        try:
+                            results.append(future.result())
+                        except Exception as e:
+                            base_path = futures[future]
+                            print(f"Error processing base path {base_path}: {e}")
 
-                if os.path.isfile(base):
-                    if base not in self.deleted_paths and (not self.text_only or is_text_file(base)):
-                        self._cache["files"].append(base)
-                        self._flat_file_list.append(base)
-                elif os.path.isdir(base):
-                    subtree = self._scan_folder(base, spec)
-                    if subtree is not None:
-                        self._cache["folders"][base] = subtree
+            # Combine results into the main tree structure
+            for path, is_dir, subtree, files_found in results:
+                if path:  # Ensure path is valid
+                    if is_dir:
+                        if subtree is not None:  # Check if folder wasn't filtered out
+                            self._tree_cache["folders"][path] = subtree
+                    else:
+                        self._tree_cache["files"].append(path)
+                    if files_found:
+                        self._flat_file_list_cache.extend(files_found)
 
-    def _scan_folder(self, folder_path, spec):
+            # Sort the top-level files for consistent order
+            self._tree_cache["files"].sort()
+            # Sort the final flat file list
+            self._flat_file_list_cache.sort()
+
+    def _get_gitignore_spec(self, folder_path: str) -> Optional[Any]:
+        """Loads and caches .gitignore spec for a given folder path."""
+        abs_folder_path = os.path.abspath(folder_path)
+        if abs_folder_path in self._gitignore_spec_cache:
+            return self._gitignore_spec_cache[abs_folder_path]
+
+        spec = load_gitignore_patterns(
+            abs_folder_path
+        )  # load_gitignore handles traversal
+        self._gitignore_spec_cache[abs_folder_path] = spec
+        return spec
+
+    def _process_base_path(
+        self, base_path: str
+    ) -> Tuple[Optional[str], bool, Optional[Dict], List[str]]:
+        """Processes a single base path (file or directory)."""
+        if base_path in self.deleted_paths:
+            return None, False, None, []
+
+        flat_files_found = []
+
+        if os.path.isfile(base_path):
+            if not self.text_only or is_text_file(base_path):
+                flat_files_found.append(base_path)
+                return base_path, False, None, flat_files_found
+            else:
+                return None, False, None, []  # Filtered out
+        elif os.path.isdir(base_path):
+            spec = self._get_gitignore_spec(base_path)
+            # Pass the base path itself to scan_folder so it knows the root for relative paths
+            subtree, files_in_subtree = self._scan_folder(base_path, base_path, spec)
+            flat_files_found.extend(files_in_subtree)
+            if (
+                subtree is not None
+            ):  # Only return if not filtered (e.g., empty and hide_empty=True)
+                return base_path, True, subtree, flat_files_found
+            else:
+                return None, True, None, flat_files_found  # Filtered out directory
+        else:
+            # Path doesn't exist or is not a regular file/dir (link?)
+            print(
+                f"Warning: Base path '{base_path}' is not a file or directory or was deleted."
+            )
+            return None, False, None, []
+
+    def _scan_folder(
+        self, folder_path: str, root_path: str, parent_spec: Optional[Any]
+    ) -> Tuple[Optional[Dict], List[str]]:
         """
-        Recursively scan a folder, applying filters.
+        Recursively scans a folder, applies filters, and builds the subtree.
+        Returns (subtree_dict | None, list_of_files_found_in_subtree).
+        Returns None for subtree_dict if the folder should be hidden.
         """
         try:
-            entries = os.listdir(folder_path)
-        except Exception:
-            return None
+            # Use os.scandir for potentially better performance than os.listdir
+            entries = list(os.scandir(folder_path))
+        except OSError as e:
+            print(f"Warning: Cannot access folder '{folder_path}': {e}")
+            return None, []  # Cannot scan, treat as empty/inaccessible
 
-        folder_dict = {"folders": {}, "files": []}
-        has_content = False
+        folder_dict: Dict[str, Any] = {"folders": {}, "files": []}
+        has_visible_content = False
+        flat_files_found: List[str] = []
 
-        for entry in sorted(entries):
-            full_path = os.path.join(folder_path, entry)
-            rel_path = os.path.relpath(full_path, start=folder_path)
+        # Get spec for the current folder (combining/overriding logic could be added here if needed)
+        current_spec = self._get_gitignore_spec(folder_path)
+
+        for entry in entries:
+            full_path = entry.path
+            # Get path relative to the *original* base path for gitignore matching
+            # This assumes gitignore patterns are relative to the .gitignore file's location
+            # A simpler approach might be needed if complex nested gitignores are involved.
+            # Using path relative to current folder for matching seems more standard.
+            rel_path_for_match = os.path.relpath(full_path, start=folder_path)
 
             if full_path in self.deleted_paths:
                 continue
-            if is_ignored(rel_path, spec):
+            # Check against spec for the current directory
+            if is_ignored(rel_path_for_match, current_spec):
                 continue
 
-            if os.path.isfile(full_path):
-                if not self.text_only or is_text_file(full_path):
-                    folder_dict["files"].append(full_path)
-                    self._flat_file_list.append(full_path)
-                    has_content = True
-            elif os.path.isdir(full_path):
-                sub_spec = load_gitignore_patterns(full_path)
-                subtree = self._scan_folder(full_path, sub_spec)
-                if subtree and (
-                    subtree["files"] or subtree["folders"] or not self.hide_empty_folders
-                ):
-                    folder_dict["folders"][full_path] = subtree
-                    has_content = True
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    if not self.text_only or is_text_file(full_path):
+                        folder_dict["files"].append(full_path)
+                        flat_files_found.append(full_path)
+                        has_visible_content = True
+                elif entry.is_dir(follow_symlinks=False):
+                    # Recursive call
+                    # Pass current spec down? Git combines them. Let's rely on _get_gitignore_spec finding the right one.
+                    subtree, files_in_subtree = self._scan_folder(
+                        full_path, root_path, current_spec
+                    )
+                    flat_files_found.extend(files_in_subtree)
+                    if subtree is not None:  # If the subdirectory is not hidden
+                        folder_dict["folders"][full_path] = subtree
+                        has_visible_content = True  # Folder has visible content if it contains a non-empty subfolder
+                # Handle symlinks explicitly if needed
+                # elif entry.is_symlink():
+                #    pass # Decide how to handle symlinks
 
-        if not has_content and self.hide_empty_folders:
+            except OSError as e:
+                print(f"Warning: Cannot access entry '{full_path}': {e}")
+                continue  # Skip problematic entries
+
+        # Sort files and folders within the current directory
+        folder_dict["files"].sort()
+        # folder_dict["folders"] = dict(sorted(folder_dict["folders"].items())) # Keep dict for faster lookups
+
+        # Determine if this folder should be returned based on content and settings
+        if not has_visible_content and self.hide_empty_folders:
+            return None, flat_files_found  # Hide empty folder
+
+        return folder_dict, flat_files_found
+
+    def get_tree(self) -> Optional[Dict[str, Any]]:
+        """Returns the cached file tree structure."""
+        with self._lock:
+            if self._tree_cache is None:
+                self.build_tree()  # Build if not already built
+            return self._tree_cache
+
+    def get_flat_file_list(self) -> List[str]:
+        """Returns the cached flat list of all included files."""
+        with self._lock:
+            if self._flat_file_list_cache is None:
+                self.build_tree()  # Build if not already built
+            # Return a copy to prevent external modification
+            return (
+                list(self._flat_file_list_cache) if self._flat_file_list_cache else []
+            )
+
+    def find_subtree(self, folder_path_to_find: str) -> Optional[Dict[str, Any]]:
+        """Finds the subtree dictionary for a given absolute folder path within the cached tree."""
+        tree = self.get_tree()
+        if not tree:
             return None
-        return folder_dict
 
-    def get_flat_file_list(self):
-        """
-        Return the cached flat list of included files.
-        """
-        with self._lock:
-            if self._flat_file_list is None:
-                self.build_tree()
-            return list(self._flat_file_list)
+        abs_path_to_find = os.path.abspath(folder_path_to_find)
 
-    def get_tree(self):
-        """
-        Return the cached tree structure.
-        """
-        with self._lock:
-            if self._cache is None:
-                self.build_tree()
-            return self._cache
+        # Check top-level folders first
+        if abs_path_to_find in tree.get("folders", {}):
+            return tree["folders"][abs_path_to_find]
+
+        # Recursive search function
+        def search_recursive(current_subtree):
+            for path, subfolder_data in current_subtree.get("folders", {}).items():
+                if os.path.abspath(path) == abs_path_to_find:
+                    return subfolder_data
+                found = search_recursive(subfolder_data)
+                if found:
+                    return found
+            return None
+
+        return search_recursive(tree)
+
+
+# --- Other File Operations ---
+
+
+def merge_file_contents(file_paths: List[str]) -> str:
+    """
+    Merge contents of multiple text files with headers indicating the file path.
+
+    Args:
+        file_paths (list): List of file paths to merge.
+
+    Returns:
+        str: Merged content of all files, or empty string if no files.
+    """
+    output = []
+    for file_path in file_paths:
+        # Double-check if it's likely a text file before reading
+        # Avoids trying to read large binary files accidentally
+        if is_text_file(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                # Use normalized path separator for header consistency
+                normalized_path = file_path.replace(os.sep, "/")
+                header = f"############## {normalized_path} ##############"
+                output.append(header)
+                output.append(content)
+                output.append("")  # Add a newline separator between files
+            except Exception as e:
+                error_msg = f"Error reading file {file_path}: {e}"
+                print(error_msg)
+                # Optionally include error message in output?
+                # output.append(f"############## ERROR: {normalized_path} ##############")
+                # output.append(error_msg)
+                # output.append("")
+        else:
+            print(f"Skipping non-text file during merge: {file_path}")
+
+    return "\n".join(output)

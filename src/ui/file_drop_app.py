@@ -1,4 +1,3 @@
-import textwrap
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -75,17 +74,16 @@ class FileDropApp(QMainWindow):
 
         # Add a keyboard shortcut hint label
         shortcut_label = QLabel(
-            "Vim Shortcuts: v (visual mode), V (select all), y (copy), C (clear), d+d (delete), Esc (exit)"
+            "Vim Shortcuts: v (visual mode), V (select all lines), y (copy), C (clear list), d+d (delete), Esc (exit mode)"
         )
         shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        shortcut_label.setStyleSheet("color: #666; font-size: 10.5px; margin-top: 4px; margin-bottom: 4px;")
+        shortcut_label.setStyleSheet("color: #666; font-size: 9px;")
         main_layout.addWidget(shortcut_label)
 
         # Add a loading indicator
         self.loading_label = QLabel("Processing...")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.loading_label.setVisible(False)  # Initially hidden
-        self.loading_label.setStyleSheet("color: #444; font-style: italic; margin: 6px;")
         main_layout.addWidget(self.loading_label)
 
         # Settings tab
@@ -150,35 +148,17 @@ class FileDropApp(QMainWindow):
         files = [f for f in files if f not in deleted]
 
         if not files:
-            self.statusBar().showMessage("No files to process.", 3000)
             return
 
         # Show the loading indicator
         self.loading_label.setVisible(True)
 
-        # Save file list for later use
-        self._merge_files_list = list(files)
-
-        from src.utils.file_operations import merge_file_contents
-
-        def do_merge():
-            try:
-                merged_text = merge_file_contents(files)
-            except Exception:
-                merged_text = ""
-            return merged_text
-
-        from PyQt6.QtCore import QThread, pyqtSignal
-
-        class MergeWorker(QThread):
-            finished = pyqtSignal(str)
-
-            def run(self):
-                merged = do_merge()
-                self.finished.emit(merged)
-
-        self.worker = MergeWorker()
-        self.worker.finished.connect(self._on_merge_completed_wrapper)
+        self.worker = FileSystemWorker("merge_files", files)
+        self.worker.finished.connect(self._on_merge_completed)
+        self.worker.progress.connect(
+            lambda value: None
+        )  # Placeholder for progress updates
+        self.worker.error.connect(self._on_error)
         self.worker.start()
 
     def _on_merge_completed(self, text):
@@ -186,10 +166,6 @@ class FileDropApp(QMainWindow):
         # Hide the loading indicator
         self.loading_label.setVisible(False)
 
-        # The worker returns the merged content of all files as one string.
-        # To improve organization, we need to split it back into per-file content.
-        # But since the worker returns a single merged string, we can't do that here.
-        # So just copy the merged text as-is.
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(text)
@@ -201,30 +177,3 @@ class FileDropApp(QMainWindow):
         self.loading_label.setVisible(False)
 
         self.statusBar().showMessage(f"Error: {error_message}", 5000)
-    def _on_merge_completed_wrapper(self, merged_text):
-        """Reorganize merged text by file and copy to clipboard."""
-        # Hide the loading indicator
-        self.loading_label.setVisible(False)
-
-        # Compose output formatted for LLM input using markdown
-        output_lines = []
-        output_lines.append("# Combined Files\n")
-
-        for idx, file_path in enumerate(self._merge_files_list, 1):
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-            except Exception:
-                content = "[Error reading file]"
-            filename = file_path.replace("\\", "/").split("/")[-1]
-            output_lines.append(f"\n### File {idx}: `{filename}`\n")
-            output_lines.append("```")
-            output_lines.append(content.strip())
-            output_lines.append("```\n")
-
-        improved_text = "\n".join(output_lines).strip()
-
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(improved_text)
-        self.statusBar().showMessage("File contents copied to clipboard.", 3000)

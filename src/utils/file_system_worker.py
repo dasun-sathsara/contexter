@@ -1,60 +1,70 @@
+############## C:/Users/dasun/Desktop/Python/src/utils/file_system_worker.py ##############
 import os
 from PyQt6.QtCore import QThread, pyqtSignal
-from src.utils.token_counter import count_tokens_in_file, count_tokens_in_folder
+
+# Removed token counter imports as that logic is now mainly in FileManager/ThreadPool
+from src.utils.file_operations import merge_file_contents
 
 
 class FileSystemWorker(QThread):
-    """Worker thread for file system operations."""
+    """
+    Worker thread primarily for potentially long-running, blocking file system
+    operations like merging large numbers of files, to avoid freezing the UI.
+    Token counting is now handled by FileManager's ThreadPoolExecutor.
+    """
 
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(int)
-    token_count_result = pyqtSignal(str, int)  # path, token_count
+    finished = pyqtSignal(object)  # Emits result data on success
+    error = pyqtSignal(str)  # Emits error message on failure
+    progress = pyqtSignal(int)  # Emits percentage progress (0-100)
 
-    def __init__(self, operation, *args):
+    def __init__(self, operation: str, *args):
         super().__init__()
         self.operation = operation
         self.args = args
+        self._is_running = True
+
+    def stop(self):
+        """Request the worker to stop."""
+        self._is_running = False
 
     def run(self):
+        """Executes the requested file system operation."""
+        self._is_running = True
         try:
-            if self.operation == "list_dir":
-                folder = self.args[0]
-                try:
-                    result = sorted(os.listdir(folder))
-                    self.finished.emit(result)
-                except Exception as e:
-                    self.error.emit(str(e))
+            if self.operation == "merge_files":
+                files_to_merge = self.args[0]
+                if not files_to_merge:
+                    self.finished.emit("")
                     return
-            elif self.operation == "merge_files":
-                files = self.args[0]
-                total_files = len(files)
-                result = []
-                for i, file_path in enumerate(files):
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            content = f.read()
-                        header = f"############## {file_path.replace(os.sep, '/')} ##############"
-                        result.extend([header, content, ""])
-                        self.progress.emit(int((i + 1) / total_files * 100))
-                    except Exception as e:
-                        print(f"Error reading file {file_path}: {e}")
-                self.finished.emit("\n".join(result))
-            elif self.operation == "count_tokens":
-                path = self.args[0]
-                text_only = self.args[1] if len(self.args) > 1 else True
-                deleted_paths = self.args[2] if len(self.args) > 2 else set()
-                
-                try:
-                    if os.path.isfile(path):
-                        token_count = count_tokens_in_file(path)
-                    else:  # It's a directory
-                        token_count = count_tokens_in_folder(path, text_only, deleted_paths)
-                    
-                    self.token_count_result.emit(path, token_count)
-                    self.finished.emit((path, token_count))
-                except Exception as e:
-                    self.error.emit(f"Error counting tokens in {path}: {str(e)}")
-                    return
+
+                # Use the refactored merge function
+                # Note: merge_file_contents itself might read files sequentially.
+                # For massive merges, further optimization (async reading) might be needed.
+                # Progress reporting here is simplified as merge_file_contents does it all at once.
+                # A more granular progress would require changing merge_file_contents.
+                self.progress.emit(50)  # Indicate processing started
+                if not self._is_running:
+                    return  # Check if stopped
+
+                result = merge_file_contents(files_to_merge)
+
+                if not self._is_running:
+                    return  # Check if stopped before emitting
+
+                self.progress.emit(100)
+                self.finished.emit(result)
+
+            # Add other long-running, blocking operations here if needed in the future
+            # elif self.operation == "some_other_blocking_op":
+            #    # ... implementation ...
+            #    pass
+
+            else:
+                self.error.emit(f"Unknown FileSystemWorker operation: {self.operation}")
+
         except Exception as e:
+            import traceback
+
+            print(f"Error in FileSystemWorker ({self.operation}): {e}")
+            traceback.print_exc()
             self.error.emit(str(e))
