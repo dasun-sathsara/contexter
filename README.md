@@ -1,19 +1,25 @@
-# File Drop Application
+# Contexter
 
-A simple PyQt6 application to manage and process files and folders dropped into a drop zone.
+A simple tool to help you prepare your code for pasting into LLMs. Drag and drop your project's source code, select the files you need, and copy them to your clipboard. Ready to get some AI assistance! ✨
 
-## Features
+## Key Features
 
--   Drag and drop files and folders.
--   Display files and folders in a list.
--   Filter to show only text files.
--   Option to hide empty folders.
--   Display token count for files and folders (using tiktoken).
--   Generate and copy to clipboard the combined text content of selected files.
--   Light and dark theme support.
+-   **Drag & Drop:** Easily add files and folders from your project.
+-   **Selective Copying:** Choose specific files to copy to the clipboard.
+-   **Token Counting:** See the token count for each file to stay within LLM limits. (Optional in settings)
+-   **File Filtering:** Configure to show text files only or hide empty folders for cleanliness.
+-   **Vim-like Navigation:** Navigate the file list using Vim shortcuts for efficiency.
+-   **Light & Dark Themes:** Toggle between light and dark modes for comfortable use.
 
-## Requirements
+## Installation
 
--   Python 3.6+
--   PyQt6
--   tiktoken
+1.  Make sure you have Python 3.12 installed.
+2.  Clone this repository.
+3.  Create a virtual environment: `python -m venv .venv`
+4.  Activate the virtual environment: `.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (macOS/Linux)
+5.  Install the dependencies: `pip install -r requirements.txt`
+6.  Run the app: `python main.py`
+
+## Credits
+
+This project was entirely developed using AI. I didn't write a single line of code! 🤖
