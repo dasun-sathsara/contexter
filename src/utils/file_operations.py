@@ -386,36 +386,35 @@ class FileTreeBuilder:
 
 def merge_file_contents(file_paths: List[str]) -> str:
     """
-    Merge contents of multiple text files with headers indicating the file path.
+    Merge contents of multiple text files with markdown-style headers.
 
     Args:
         file_paths (list): List of file paths to merge.
 
     Returns:
-        str: Merged content of all files, or empty string if no files.
+        str: Merged content of all files in markdown format, or empty string if no files.
     """
     output = []
     for file_path in file_paths:
-        # Double-check if it's likely a text file before reading
-        # Avoids trying to read large binary files accidentally
         if is_text_file(file_path):
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-                # Use normalized path separator for header consistency
+                # Use normalized path for consistency
                 normalized_path = file_path.replace(os.sep, "/")
-                header = f"############## {normalized_path} ##############"
-                output.append(header)
-                output.append(content)
-                output.append("")  # Add a newline separator between files
+
+                # Add the markdown-style header
+                output.append(f"#### {normalized_path}")
+                output.append("")  # Blank line after header
+                output.append("```")  # Start code block
+                output.append(content.rstrip())  # Remove trailing whitespace
+                output.append("```")  # End code block
+                output.append("")  # Blank line after code block
             except Exception as e:
                 error_msg = f"Error reading file {file_path}: {e}"
                 print(error_msg)
-                # Optionally include error message in output?
-                # output.append(f"############## ERROR: {normalized_path} ##############")
-                # output.append(error_msg)
-                # output.append("")
         else:
             print(f"Skipping non-text file during merge: {file_path}")
 
-    return "\n".join(output)
+    # Join with newlines and add a final newline
+    return "\n".join(output + [""])
