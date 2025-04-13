@@ -311,8 +311,6 @@ class FileManager:
         # --- Actions ---
         if text == "y":  # Yank (Copy)
             if self.parent and hasattr(self.parent, "generate_paths_text"):
-                # Use selected items if in visual mode, otherwise maybe current item?
-                # For now, assume it uses selected items or triggers main window logic
                 self.parent.generate_paths_text()  # Assuming this handles selection logic
                 if self.visual_mode:
                     self.exit_visual_mode()  # Exit visual mode after yanking
@@ -323,16 +321,10 @@ class FileManager:
             self.clear_list()
             event.accept()
             return
-        elif text == "d":  # Delete Action ('dd')
-            if self._d_pressed_once:
-                self.remove_selected_items()
-                self._d_pressed_once = False
-                self._d_press_timer.stop()
-                if self.visual_mode:
-                    self.exit_visual_mode()  # Exit visual mode after deleting
-            else:
-                self._d_pressed_once = True
-                self._d_press_timer.start()  # Start timer for second 'd'
+        elif text == "d":  # Delete Action (single 'd')
+            self.remove_selected_items()
+            if self.visual_mode:
+                self.exit_visual_mode()  # Exit visual mode after deleting
             event.accept()
             return
         elif key == Qt.Key.Key_Delete:  # Standard Delete key
@@ -341,11 +333,6 @@ class FileManager:
                 self.exit_visual_mode()
             event.accept()
             return
-
-        # Reset 'dd' state if another key is pressed
-        if self._d_pressed_once and text != "d":
-            self._reset_d_press()
-            self._d_press_timer.stop()
 
         # --- Navigation ---
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):

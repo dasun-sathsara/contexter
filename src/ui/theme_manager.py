@@ -98,7 +98,7 @@ class ThemeManager:
                 background-color: transparent;
                 color: #4a86e8;
                 padding: 2px 4px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: normal;
             }
         """)
@@ -193,7 +193,7 @@ class ThemeManager:
                 background-color: transparent;
                 color: #007acc;
                 padding: 2px 4px;
-                font-size: 10px;
+                font-size: 14px;
                 font-weight: normal;
             }
         """)

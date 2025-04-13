@@ -74,10 +74,10 @@ class FileDropApp(QMainWindow):
 
         # Add a keyboard shortcut hint label
         shortcut_label = QLabel(
-            "Vim Shortcuts: v (visual mode), V (select all lines), y (copy), C (clear list), d+d (delete), Esc (exit mode)"
+            "Vim Shortcuts: v (visual mode), V (select all lines), y (copy), C (clear list), d (delete), Esc (exit mode)"
         )
         shortcut_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        shortcut_label.setStyleSheet("color: #666; font-size: 9px;")
+        shortcut_label.setStyleSheet("color: #666; font-size: 12px;")
         main_layout.addWidget(shortcut_label)
 
         # Add a loading indicator
