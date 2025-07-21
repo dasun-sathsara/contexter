@@ -2,7 +2,6 @@
 import os
 from PyQt6.QtCore import QThread, pyqtSignal
 
-# Removed token counter imports as that logic is now mainly in FileManager/ThreadPool
 from src.utils.file_operations import merge_file_contents
 
 

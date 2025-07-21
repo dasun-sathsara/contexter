@@ -219,10 +219,18 @@ class FileTreeBuilder:
                     if files_found:
                         self._flat_file_list_cache.extend(files_found)
 
-            # Sort the top-level files for consistent order
-            self._tree_cache["files"].sort()
-            # Sort the final flat file list
+            # Sort everything once at the end instead of per-folder
+            self._sort_tree_recursively(self._tree_cache)
             self._flat_file_list_cache.sort()
+
+    def _sort_tree_recursively(self, tree_node: Dict[str, Any]):
+        """Sort files and folders recursively after tree is built."""
+        if "files" in tree_node:
+            tree_node["files"].sort()
+
+        if "folders" in tree_node:
+            for subfolder in tree_node["folders"].values():
+                self._sort_tree_recursively(subfolder)
 
     def _get_gitignore_spec(self, folder_path: str) -> Optional[Any]:
         """Loads and caches .gitignore spec for a given folder path."""
@@ -329,9 +337,8 @@ class FileTreeBuilder:
                 print(f"Warning: Cannot access entry '{full_path}': {e}")
                 continue  # Skip problematic entries
 
-        # Sort files and folders within the current directory
-        folder_dict["files"].sort()
-        # folder_dict["folders"] = dict(sorted(folder_dict["folders"].items())) # Keep dict for faster lookups
+        # Sorting is now done once at the end of build_tree() for efficiency
+        # folder_dict["files"].sort()  # Removed: defer sorting until end
 
         # Determine if this folder should be returned based on content and settings
         if not has_visible_content and self.hide_empty_folders:

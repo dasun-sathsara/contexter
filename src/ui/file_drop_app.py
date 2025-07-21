@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QTabWidget,
-    QStatusBar,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -57,9 +56,7 @@ class FileDropApp(QMainWindow):
 
         self.drop_zone = DropZone(self.add_files)
         self.file_list = QListWidget()
-        self.file_manager = FileManager(
-            self.file_list, self, self.settings_manager
-        )
+        self.file_manager = FileManager(self.file_list, self, self.settings_manager)
 
         main_layout.addWidget(header_label)
         main_layout.addWidget(self.drop_zone)
@@ -89,7 +86,7 @@ class FileDropApp(QMainWindow):
         self.on_settings_changed()
 
     def on_settings_changed(self):
-        dark_mode = self.settings_manager.get_setting('dark_mode', False)
+        dark_mode = self.settings_manager.get_setting("dark_mode", False)
         if dark_mode:
             ThemeManager.apply_dark_theme(self)
         else:
@@ -117,3 +114,9 @@ class FileDropApp(QMainWindow):
     def _on_error(self, error_message):
         self.loading_label.setVisible(False)
         self.statusBar().showMessage(f"Error: {error_message}", 5000)
+
+    def closeEvent(self, event):
+        """Handle application shutdown."""
+        if hasattr(self, "file_manager") and self.file_manager:
+            self.file_manager.shutdown()
+        super().closeEvent(event)

@@ -1,14 +1,13 @@
 import os
-from PyQt6.QtWidgets import QListWidget, QApplication, QLabel, QStatusBar
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeyEvent, QColor
-from PyQt6.QtWidgets import QStyle
+from PyQt6.QtWidgets import QListWidget, QLabel, QStatusBar
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeyEvent
 from typing import Set, Dict, Optional, List, Tuple
+import threading
 from concurrent.futures import ThreadPoolExecutor, Future, CancelledError
 
 from src.models.file_list_item import FileListItem
-from src.utils.file_system_worker import FileSystemWorker
-from src.utils.file_operations import FileTreeBuilder, is_text_file
+from src.utils.file_operations import FileTreeBuilder
 from src.utils.token_counter import count_tokens_in_file, count_tokens_in_folder
 from src.utils.settings_manager import SettingsManager
 
@@ -35,9 +34,11 @@ class FileManager:
         self.status_label: Optional[QLabel] = None
 
         self.executor = ThreadPoolExecutor(
-            max_workers=os.cpu_count() or 4, thread_name_prefix="FileManagerWorker"
+            max_workers=min(4, os.cpu_count() or 1),
+            thread_name_prefix="FileManagerWorker",
         )
         self.token_futures: Dict[str, Future] = {}
+        self._futures_lock = threading.Lock()  # Thread safety for token_futures
 
         self.setup_list_widget()
         self._setup_status_bar()
@@ -90,14 +91,13 @@ class FileManager:
             self.status_label.setText("")
             self.status_label.hide()
 
-    
-
     def _cancel_pending_futures(self):
         """Cancel all active token counting futures."""
-        for future in self.token_futures.values():
-            if not future.done():
-                future.cancel()
-        self.token_futures.clear()
+        with self._futures_lock:
+            for future in self.token_futures.values():
+                if not future.done():
+                    future.cancel()
+            self.token_futures.clear()
 
     def add_files(self, paths: List[str]):
         """Adds new base paths, rebuilds the tree, and shows the root view."""
@@ -122,9 +122,9 @@ class FileManager:
 
         self.tree_builder = FileTreeBuilder(
             self.base_paths,
-            text_only=self.settings_manager.get_setting('text_only', True),
+            text_only=self.settings_manager.get_setting("text_only", True),
             hide_empty_folders=self.settings_manager.get_setting(
-                'hide_empty_folders', True
+                "hide_empty_folders", True
             ),
             deleted_paths=self.deleted_paths,
         )
@@ -185,9 +185,10 @@ class FileManager:
                 self.file_list.setCurrentRow(select_row)
 
         # Calculate token counts asynchronously if enabled
-        if self.settings_manager.get_setting(
-            'show_token_count', True
-        ) and paths_for_token_calc:
+        if (
+            self.settings_manager.get_setting("show_token_count", True)
+            and paths_for_token_calc
+        ):
             self.calculate_token_counts(paths_for_token_calc)
 
     def show_initial_items(self):
@@ -217,7 +218,6 @@ class FileManager:
             return
 
         self.current_folder = folder_path
-        tree = self.tree_builder.get_tree()
         subtree = self.tree_builder.find_subtree(folder_path)  # Use helper method
 
         if not subtree:
@@ -454,20 +454,31 @@ class FileManager:
 
     def calculate_token_counts(self, paths_to_process: List[str]):
         """Calculates token counts for the given paths using the thread pool."""
-        if not self.settings_manager.get_setting('show_token_count', True):
+        if not self.settings_manager.get_setting("show_token_count", True):
             return
+
+        for path in paths_to_process:
+            if path in self.added_paths:
+                item = self.added_paths[path]
+                future = self.executor.submit(
+                    self._token_count_worker, path, item.is_dir
+                )
+                with self._futures_lock:
+                    self.token_futures[path] = future
+                future.add_done_callback(self._on_token_future_done)
 
     def _token_count_worker(self, path: str, is_dir: bool) -> Tuple[str, int]:
         """Worker function executed in the thread pool to count tokens."""
         try:
-            text_only = self.settings_manager.get_setting('text_only', True)
             if is_dir:
-                count = count_tokens_in_folder(path, text_only, self.deleted_paths)
+                # Use the efficient count_tokens_in_folder function
+                count = count_tokens_in_folder(
+                    path,
+                    text_only=self.settings_manager.get_setting("text_only", True),
+                    deleted_paths=self.deleted_paths,
+                )
             else:
-                if not text_only or is_text_file(path):
-                    count = count_tokens_in_file(path)
-                else:
-                    count = 0
+                count = count_tokens_in_file(path)
             return path, count
         except Exception as e:
             print(f"Error counting tokens for {path}: {e}")
@@ -482,9 +493,10 @@ class FileManager:
         try:
             path, token_count = future.result()
 
-            # Remove future from tracking dict
-            if path in self.token_futures:
-                del self.token_futures[path]
+            # Remove future from tracking dict (thread-safe)
+            with self._futures_lock:
+                if path in self.token_futures:
+                    del self.token_futures[path]
 
             # Update the corresponding list item if it still exists
             if path in self.added_paths and token_count >= 0:
@@ -506,10 +518,6 @@ class FileManager:
             # This part is tricky; need to associate future back to path if result fails early
             # A safer way is to pass path within the callback closure if possible,
             # or iterate futures dict, but that's less efficient.
-
-    
-
-    
 
     def on_selection_changed(self):
         """Handles changes in list widget selection."""
