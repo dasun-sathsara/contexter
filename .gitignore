@@ -13,13 +13,13 @@ build/
 dist/
 *.spec
 
-*.txt
-p.md
-.aider*
-
+# Ignore temporary and cache files
 .ruff_cache
-.git
-prompt.md
+.aider*
 
 # Ignore user settings
 settings.json
+
+# Ignore specific files
+p.md
+prompt.md
