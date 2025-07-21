@@ -1,5 +1,4 @@
 ############## C:/Users/dasun/Desktop/Python/src/utils/file_system_worker.py ##############
-import os
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from src.utils.file_operations import merge_file_contents
@@ -37,10 +36,6 @@ class FileSystemWorker(QThread):
                     return
 
                 # Use the refactored merge function
-                # Note: merge_file_contents itself might read files sequentially.
-                # For massive merges, further optimization (async reading) might be needed.
-                # Progress reporting here is simplified as merge_file_contents does it all at once.
-                # A more granular progress would require changing merge_file_contents.
                 self.progress.emit(50)  # Indicate processing started
                 if not self._is_running:
                     return  # Check if stopped

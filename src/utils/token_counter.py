@@ -20,8 +20,8 @@ def count_tokens_in_file(file_path: str) -> int:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Use cached encoder
-        tokens = _enc.encode(content)
+        # Use cached encoder with disallowed_special=() to allow all special tokens
+        tokens = _enc.encode(content, disallowed_special=())
         return len(tokens)
     except Exception as e:
         print(f"Error counting tokens in {file_path}: {e}")

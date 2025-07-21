@@ -1,6 +1,6 @@
-import os
 from pathlib import Path
 import pathspec
+
 
 def load_gitignore_patterns(start_path):
     """Load all .gitignore patterns from start_path up to root"""
@@ -13,12 +13,19 @@ def load_gitignore_patterns(start_path):
         if gitignore_file.is_file():
             with gitignore_file.open("r") as f:
                 lines = f.readlines()
-                patterns.extend([line.strip() for line in lines if line.strip() and not line.strip().startswith("#")])
+                patterns.extend(
+                    [
+                        line.strip()
+                        for line in lines
+                        if line.strip() and not line.strip().startswith("#")
+                    ]
+                )
 
     if patterns:
         return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
     else:
         return None
+
 
 def is_ignored(path, specs):
     """Check if path is ignored by any PathSpec"""

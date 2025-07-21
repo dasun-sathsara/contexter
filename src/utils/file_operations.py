@@ -181,47 +181,45 @@ class FileTreeBuilder:
         clear_text_file_cache()
 
     def build_tree(self):
-        """Builds or rebuilds the file tree structure and caches it."""
-        with self._lock:
-            self._tree_cache = {"folders": {}, "files": []}
-            self._flat_file_list_cache = []
-            self._gitignore_spec_cache = {}  # Clear gitignore cache for rebuild
+        self._tree_cache = {"folders": {}, "files": []}
+        self._flat_file_list_cache = []
+        self._gitignore_spec_cache = {}  # Clear gitignore cache for rebuild
 
-            # Use ThreadPoolExecutor for potentially faster scanning of multiple base paths
-            # Adjust workers based on expected number of base paths vs cores
-            num_workers = min(len(self.base_paths), (os.cpu_count() or 1) * 2)
-            if num_workers <= 1:  # Avoid overhead for single base path
-                results = [self._process_base_path(base) for base in self.base_paths]
-            else:
-                results = []
-                with ThreadPoolExecutor(
-                    max_workers=num_workers, thread_name_prefix="TreeBuilderWorker"
-                ) as executor:
-                    futures = {
-                        executor.submit(self._process_base_path, base): base
-                        for base in self.base_paths
-                    }
-                    for future in as_completed(futures):
-                        try:
-                            results.append(future.result())
-                        except Exception as e:
-                            base_path = futures[future]
-                            print(f"Error processing base path {base_path}: {e}")
+        # Use ThreadPoolExecutor for potentially faster scanning of multiple base paths
+        # Adjust workers based on expected number of base paths vs cores
+        num_workers = min(len(self.base_paths), (os.cpu_count() or 1) * 2)
+        if num_workers <= 1:  # Avoid overhead for single base path
+            results = [self._process_base_path(base) for base in self.base_paths]
+        else:
+            results = []
+            with ThreadPoolExecutor(
+                max_workers=num_workers, thread_name_prefix="TreeBuilderWorker"
+            ) as executor:
+                futures = {
+                    executor.submit(self._process_base_path, base): base
+                    for base in self.base_paths
+                }
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        base_path = futures[future]
+                        print(f"Error processing base path {base_path}: {e}")
 
-            # Combine results into the main tree structure
-            for path, is_dir, subtree, files_found in results:
-                if path:  # Ensure path is valid
-                    if is_dir:
-                        if subtree is not None:  # Check if folder wasn't filtered out
-                            self._tree_cache["folders"][path] = subtree
-                    else:
-                        self._tree_cache["files"].append(path)
-                    if files_found:
-                        self._flat_file_list_cache.extend(files_found)
+        # Combine results into the main tree structure
+        for path, is_dir, subtree, files_found in results:
+            if path:  # Ensure path is valid
+                if is_dir:
+                    if subtree is not None:  # Check if folder wasn't filtered out
+                        self._tree_cache["folders"][path] = subtree
+                else:
+                    self._tree_cache["files"].append(path)
+                if files_found:
+                    self._flat_file_list_cache.extend(files_found)
 
-            # Sort everything once at the end instead of per-folder
-            self._sort_tree_recursively(self._tree_cache)
-            self._flat_file_list_cache.sort()
+        # Sort everything once at the end instead of per-folder
+        self._sort_tree_recursively(self._tree_cache)
+        self._flat_file_list_cache.sort()
 
     def _sort_tree_recursively(self, tree_node: Dict[str, Any]):
         """Sort files and folders recursively after tree is built."""

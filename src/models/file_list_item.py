@@ -18,36 +18,31 @@ class FileListItem(QListWidgetItem):
         super().__init__(parent)
         self.path: str = path
         self.name: str = ".." if path == ".." else os.path.basename(path)
-        # Defer os.path.isdir check if path is potentially invalid during init (like "..")
         self.is_dir: bool = False
         if path != "..":
             try:
                 self.is_dir = os.path.isdir(path)
-            except OSError:  # Handle potential errors like path too long
+            except OSError:
                 self.is_dir = False  # Default assumption if path is problematic
         elif path == "..":
             self.is_dir = True  # Special case for back navigation
 
         self.token_count: Optional[int] = None
 
-        # Create widget to hold the content
         self.content_widget = QWidget()
         layout = QHBoxLayout(self.content_widget)
         layout.setContentsMargins(4, 8, 8, 8)
         layout.setSpacing(6)
 
-        # Create labels for the name and token count
         self.name_label = QLabel(self.name)
         self.token_label = QLabel()
         self.token_label.setObjectName("token_label")
         self.token_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        # Set minimum height for labels to prevent text cutoff
         self.name_label.setMinimumHeight(20)
         self.token_label.setMinimumHeight(20)
 
-        # Improve font and style
         font = self.name_label.font()
         font.setPointSize(11)  # slightly larger font
         self.name_label.setFont(font)
@@ -78,9 +73,7 @@ class FileListItem(QListWidgetItem):
 
         self.update_display_text()
 
-        # Ensure minimum height for the widget
         self.content_widget.setMinimumHeight(36)
-        # Set size hint for proper layout
         self.setSizeHint(self.content_widget.sizeHint())
 
         # Initialize selection state
