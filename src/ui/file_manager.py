@@ -10,76 +10,51 @@ from src.models.file_list_item import FileListItem
 from src.utils.file_system_worker import FileSystemWorker
 from src.utils.file_operations import FileTreeBuilder, is_text_file
 from src.utils.token_counter import count_tokens_in_file, count_tokens_in_folder
+from src.utils.settings_manager import SettingsManager
 
 
 class FileManager:
-    def __init__(self, list_widget: QListWidget, parent=None):
+    def __init__(
+        self,
+        list_widget: QListWidget,
+        parent,
+        settings_manager: SettingsManager,
+    ):
         self.file_list = list_widget
-        self.parent = parent  # Reference to the main window (FileDropApp)
-        self.added_paths: Dict[
-            str, FileListItem
-        ] = {}  # Path -> ListWidgetItem mapping for quick access
-        self.deleted_paths: Set[str] = (
-            set()
-        )  # Stores paths explicitly deleted by the user
-        self.base_paths: Set[str] = set()  # Top-level paths added by the user
-        self.current_folder: Optional[str] = (
-            None  # Path of the currently viewed folder, None for root
-        )
-        self.nav_stack: List[Optional[str]] = []  # History for back navigation
+        self.parent = parent
+        self.settings_manager = settings_manager
+        self.added_paths: Dict[str, FileListItem] = {}
+        self.deleted_paths: Set[str] = set()
+        self.base_paths: Set[str] = set()
+        self.current_folder: Optional[str] = None
+        self.nav_stack: List[Optional[str]] = []
 
-        # Settings state
-        self.text_only = True
-        self.hide_empty_folders = True
-        self.show_token_count = True
-
-        # Vim visual mode state
         self.visual_mode = False
         self.visual_anchor_row: Optional[int] = None
         self.status_bar: Optional[QStatusBar] = None
         self.status_label: Optional[QLabel] = None
 
-        # Use a thread pool for concurrent operations like token counting
-        # Adjust max_workers based on typical core counts or desired responsiveness
         self.executor = ThreadPoolExecutor(
             max_workers=os.cpu_count() or 4, thread_name_prefix="FileManagerWorker"
         )
-        self.token_futures: Dict[str, Future] = {}  # path -> Future for token counting
+        self.token_futures: Dict[str, Future] = {}
 
-        # Setup list widget properties
-        self.file_list.setSelectionMode(
-            QListWidget.SelectionMode.ExtendedSelection
-        )  # Allow multi-select generally
-        self.file_list.setTextElideMode(
-            Qt.TextElideMode.ElideMiddle
-        )  # Better for long names
-        self.file_list.setWordWrap(False)
-        self.file_list.setUniformItemSizes(
-            True
-        )  # Performance optimization if items are similar height
-        self.file_list.setBatchSize(100)  # Performance for large lists
-        self.file_list.setLayoutMode(QListWidget.LayoutMode.Batched)  # Performance
-
-        # Connect signals
-        self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
-        self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
-
-        # Override keyPressEvent for Vim bindings
-        # Keep the original implementation for fallback
-        self._original_key_press_event = self.file_list.keyPressEvent
-        self.file_list.keyPressEvent = self._list_key_press_event  # type: ignore
-
-        # Vim 'd' press state tracking
-        self._d_pressed_once = False
-        self._d_press_timer = QTimer()
-        self._d_press_timer.setSingleShot(True)
-        self._d_press_timer.setInterval(500)  # 0.5 second window for 'dd'
-        self._d_press_timer.timeout.connect(self._reset_d_press)
-
+        self.setup_list_widget()
         self._setup_status_bar()
 
-        # File tree builder instance
         self.tree_builder: Optional[FileTreeBuilder] = None
+
+    def setup_list_widget(self):
+        self.file_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.file_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.file_list.setWordWrap(False)
+        self.file_list.setUniformItemSizes(True)
+        self.file_list.setBatchSize(100)
+        self.file_list.setLayoutMode(QListWidget.LayoutMode.Batched)
+        self.file_list.itemDoubleClicked.connect(self.on_item_double_clicked)
+        self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
+        self._original_key_press_event = self.file_list.keyPressEvent
+        self.file_list.keyPressEvent = self._list_key_press_event
 
     def _setup_status_bar(self):
         """Set up a status bar widget if the parent provides one."""
@@ -115,9 +90,7 @@ class FileManager:
             self.status_label.setText("")
             self.status_label.hide()
 
-    def _reset_d_press(self):
-        """Reset the flag indicating 'd' was pressed once."""
-        self._d_pressed_once = False
+    
 
     def _cancel_pending_futures(self):
         """Cancel all active token counting futures."""
@@ -147,29 +120,23 @@ class FileManager:
             self.tree_builder = None
             return
 
-        # Show temporary loading state?
-        # self.file_list.clear()
-        # self.file_list.addItem("Building file tree...")
-
-        # Rebuild the tree with current settings and deleted paths
         self.tree_builder = FileTreeBuilder(
             self.base_paths,
-            text_only=self.text_only,
-            hide_empty_folders=self.hide_empty_folders,
+            text_only=self.settings_manager.get_setting('text_only', True),
+            hide_empty_folders=self.settings_manager.get_setting(
+                'hide_empty_folders', True
+            ),
             deleted_paths=self.deleted_paths,
         )
-        # Building the tree can take time, consider a worker thread if it blocks UI significantly
-        # For now, assume it's fast enough for typical cases.
         try:
             self.tree_builder.build_tree()
         except Exception as e:
             self.set_status_message(f"Error building file tree: {e}", 5000)
             print(f"Error building file tree: {e}")
-            self.tree_builder = None  # Invalidate tree on error
+            self.tree_builder = None
             self.file_list.clear()
             return
 
-        # Refresh the view (root or current folder)
         self._refresh_current_view()
 
     def _populate_list(self, items_to_display: List[str]):
@@ -218,7 +185,9 @@ class FileManager:
                 self.file_list.setCurrentRow(select_row)
 
         # Calculate token counts asynchronously if enabled
-        if self.show_token_count and paths_for_token_calc:
+        if self.settings_manager.get_setting(
+            'show_token_count', True
+        ) and paths_for_token_calc:
             self.calculate_token_counts(paths_for_token_calc)
 
     def show_initial_items(self):
@@ -290,110 +259,81 @@ class FileManager:
     def _list_key_press_event(self, event: QKeyEvent):
         """Handles key presses in the list widget for Vim-like navigation and actions."""
         key = event.key()
-        text = event.text()  # Gets the character, respects modifiers like Shift
+        text = event.text()
 
-        # --- Visual Mode Toggles ---
+        # --- Mode Toggles ---
         if text == "v" and not self.visual_mode:
             self.enter_visual_mode()
-            event.accept()
-            return
-        elif (
-            text == "V" and not self.visual_mode
-        ):  # Visual Line Mode (select all below)
+        elif text == "V" and not self.visual_mode:
             self.enter_visual_mode(select_all_below=True)
-            event.accept()
-            return
         elif key == Qt.Key.Key_Escape and self.visual_mode:
             self.exit_visual_mode()
-            event.accept()
-            return
 
         # --- Actions ---
-        if text == "y":  # Yank (Copy)
-            if self.parent and hasattr(self.parent, "generate_paths_text"):
-                self.parent.generate_paths_text()  # Assuming this handles selection logic
-                if self.visual_mode:
-                    self.exit_visual_mode()  # Exit visual mode after yanking
-                self.set_status_message("Yanked selected items.", 2000)
-            event.accept()
-            return
-        elif text == "C":  # Clear List (Shift+c equivalent)
+        elif text == "y":
+            self._handle_yank()
+        elif text == "C":
             self.clear_list()
-            event.accept()
-            return
-        elif text == "d":  # Delete Action (single 'd')
-            self.remove_selected_items()
-            if self.visual_mode:
-                self.exit_visual_mode()  # Exit visual mode after deleting
-            event.accept()
-            return
-        elif key == Qt.Key.Key_Delete:  # Standard Delete key
-            self.remove_selected_items()
-            if self.visual_mode:
-                self.exit_visual_mode()
-            event.accept()
-            return
+        elif text == "d" or key == Qt.Key.Key_Delete:
+            self._handle_delete()
 
         # --- Navigation ---
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            selected_item = self.file_list.currentItem()
-            if selected_item:
-                self.on_item_double_clicked(selected_item)
-                # Don't exit visual mode on enter/navigate
-            event.accept()
-            return
-        elif key == Qt.Key.Key_Right or text == "l":  # Navigate into folder
-            selected_item = self.file_list.currentItem()
-            if (
-                selected_item
-                and getattr(selected_item, "is_dir", False)
-                and selected_item.text() != ".."
-            ):
-                self.on_item_double_clicked(selected_item)
-            event.accept()
-            return
-        elif key == Qt.Key.Key_Left or text == "h":  # Navigate back
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._handle_navigation_into()
+        elif key == Qt.Key.Key_Right or text == "l":
+            self._handle_navigation_into()
+        elif key == Qt.Key.Key_Left or text == "h":
             self.navigate_back()
-            event.accept()
-            return
-        elif text == "j" or key == Qt.Key.Key_Down:  # Move Down
-            current_row = self.file_list.currentRow()
-            if current_row < self.file_list.count() - 1:
-                self.file_list.setCurrentRow(current_row + 1)
-                if self.visual_mode:
-                    self._update_visual_selection()
-            event.accept()
-            return
-        elif text == "k" or key == Qt.Key.Key_Up:  # Move Up
-            current_row = self.file_list.currentRow()
-            if current_row > 0:
-                self.file_list.setCurrentRow(current_row - 1)
-                if self.visual_mode:
-                    self._update_visual_selection()
-            event.accept()
-            return
-        elif text == "g":  # Go to Top (first item)
-            if self.file_list.count() > 0:
-                self.file_list.setCurrentRow(0)
-                if self.visual_mode:
-                    self._update_visual_selection()
-            event.accept()
-            return
-        elif text == "G":  # Go to Bottom (last item)
-            if self.file_list.count() > 0:
-                self.file_list.setCurrentRow(self.file_list.count() - 1)
-                if self.visual_mode:
-                    self._update_visual_selection()
-            event.accept()
-            return
+        elif text == "j" or key == Qt.Key.Key_Down:
+            self._move_selection(1)
+        elif text == "k" or key == Qt.Key.Key_Up:
+            self._move_selection(-1)
+        elif text == "g":
+            self._move_to_edge(start=True)
+        elif text == "G":
+            self._move_to_edge(start=False)
 
-        # If no custom binding handled, fall back to default behavior
-        if not event.isAccepted():
+        # --- Fallback ---
+        else:
             if self._original_key_press_event:
                 self._original_key_press_event(event)
             else:
-                # Fallback if original somehow missing
                 QListWidget.keyPressEvent(self.file_list, event)
+            return  # Return early to avoid calling event.accept() again
+
+        event.accept()
+
+    def _handle_yank(self):
+        if self.parent and hasattr(self.parent, "generate_paths_text"):
+            self.parent.generate_paths_text()
+            if self.visual_mode:
+                self.exit_visual_mode()
+            self.set_status_message("Yanked selected items.", 2000)
+
+    def _handle_delete(self):
+        self.remove_selected_items()
+        if self.visual_mode:
+            self.exit_visual_mode()
+
+    def _handle_navigation_into(self):
+        selected_item = self.file_list.currentItem()
+        if selected_item:
+            self.on_item_double_clicked(selected_item)
+
+    def _move_selection(self, delta: int):
+        current_row = self.file_list.currentRow()
+        new_row = current_row + delta
+        if 0 <= new_row < self.file_list.count():
+            self.file_list.setCurrentRow(new_row)
+            if self.visual_mode:
+                self._update_visual_selection()
+
+    def _move_to_edge(self, start: bool):
+        if self.file_list.count() > 0:
+            new_row = 0 if start else self.file_list.count() - 1
+            self.file_list.setCurrentRow(new_row)
+            if self.visual_mode:
+                self._update_visual_selection()
 
     def navigate_back(self):
         """Navigates to the previous folder in the history."""
@@ -505,47 +445,24 @@ class FileManager:
 
     def calculate_token_counts(self, paths_to_process: List[str]):
         """Calculates token counts for the given paths using the thread pool."""
-        if not self.show_token_count:
+        if not self.settings_manager.get_setting('show_token_count', True):
             return
-
-        # Cancel futures for paths no longer visible or relevant?
-        # For simplicity, let's just not submit if a future already exists and isn't done.
-        # A more robust approach might involve tracking visible items vs futures.
-
-        for path in paths_to_process:
-            if path in self.added_paths and path not in self.token_futures:
-                item = self.added_paths[path]
-                # Clear existing count visually while calculating
-                item.set_token_count(
-                    -1
-                )  # Use -1 or None to indicate loading? Let's use None.
-                item.token_count = None
-                item.update_display_text()
-
-                # Submit task to executor
-                future = self.executor.submit(
-                    self._token_count_worker, path, item.is_dir
-                )
-                self.token_futures[path] = future
-                # Add callback to handle result when done
-                future.add_done_callback(self._on_token_future_done)
 
     def _token_count_worker(self, path: str, is_dir: bool) -> Tuple[str, int]:
         """Worker function executed in the thread pool to count tokens."""
         try:
+            text_only = self.settings_manager.get_setting('text_only', True)
             if is_dir:
-                # Pass current filters/state if needed by the counter function
-                count = count_tokens_in_folder(path, self.text_only, self.deleted_paths)
+                count = count_tokens_in_folder(path, text_only, self.deleted_paths)
             else:
-                # Only count if it's a text file (if filter enabled)
-                if not self.text_only or is_text_file(path):
+                if not text_only or is_text_file(path):
                     count = count_tokens_in_file(path)
                 else:
-                    count = 0  # Don't count non-text files if filter is on
+                    count = 0
             return path, count
         except Exception as e:
             print(f"Error counting tokens for {path}: {e}")
-            return path, -1  # Indicate error with -1
+            return path, -1
 
     def _on_token_future_done(self, future: Future):
         """Callback executed when a token counting future completes."""
@@ -581,25 +498,9 @@ class FileManager:
             # A safer way is to pass path within the callback closure if possible,
             # or iterate futures dict, but that's less efficient.
 
-    def on_show_token_count_changed(self, state: bool):
-        """Handles changes to the 'Show token count' setting."""
-        self.show_token_count = state
-        self._cancel_pending_futures()  # Stop any ongoing calculations
+    
 
-        # If enabling, calculate for all visible items. If disabling, clear counts.
-        if state:
-            # Recalculate for currently visible items
-            visible_paths = list(self.added_paths.keys())
-            self.calculate_token_counts(visible_paths)
-        else:
-            # Clear token display for all visible items
-            for item in self.added_paths.values():
-                item.token_count = None
-                item.update_display_text()
-
-    def on_settings_changed(self):
-        """Called when text_only or hide_empty_folders setting changes."""
-        self._rebuild_tree_and_refresh_view()
+    
 
     def on_selection_changed(self):
         """Handles changes in list widget selection."""
