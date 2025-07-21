@@ -1,6 +1,6 @@
 {
     "text_only": true,
     "hide_empty_folders": true,
-    "dark_mode": true,
+    "dark_mode": false,
     "show_token_count": true
 }

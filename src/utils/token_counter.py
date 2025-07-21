@@ -2,8 +2,22 @@ import os
 import tiktoken
 from typing import Optional, Set
 
+
 # Cache the encoder to avoid rebuilding it for every file
-_enc = tiktoken.get_encoding("cl100k_base")
+def get_encoder():
+    """Get tiktoken encoder with fallback options."""
+    try:
+        return tiktoken.get_encoding("cl100k_base")
+    except ValueError:
+        # Fallback to older encoding if cl100k_base is not available
+        try:
+            return tiktoken.get_encoding("p50k_base")
+        except ValueError:
+            # Last resort fallback
+            return tiktoken.encoding_for_model("gpt-3.5-turbo")
+
+
+_enc = None
 
 
 def count_tokens_in_file(file_path: str) -> int:
@@ -16,6 +30,10 @@ def count_tokens_in_file(file_path: str) -> int:
     Returns:
         int: Number of tokens in the file
     """
+    global _enc
+    if _enc is None:
+        _enc = get_encoder()
+
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()

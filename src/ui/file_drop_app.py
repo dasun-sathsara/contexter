@@ -23,7 +23,7 @@ class FileDropApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("File Drop Interface")
+        self.setWindowTitle("Contexter - Code Preparation Tool")
         self.resize(1000, 800)
         self.setMinimumSize(800, 600)
 

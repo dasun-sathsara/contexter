@@ -56,6 +56,25 @@ wheels = [
 ]
 
 [[package]]
+name = "contexter"
+version = "1.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "pathspec" },
+    { name = "pyinstaller" },
+    { name = "pyqt6" },
+    { name = "tiktoken" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pathspec", specifier = ">=0.12.1" },
+    { name = "pyinstaller", specifier = ">=6.12.0" },
+    { name = "pyqt6", specifier = ">=6.7.1" },
+    { name = "tiktoken", specifier = ">=0.9.0" },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -190,25 +209,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/1e/c6a28a142f14e735088534cc92951c3f48cccd77cdd4f3b10d7996be420f/pyqt6_sip-13.10.2-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:3dde8024d055f496eba7d44061c5a1ba4eb72fc95e5a9d7a0dbc908317e0888b", size = 303833, upload-time = "2025-05-23T12:26:41.075Z" },
     { url = "https://files.pythonhosted.org/packages/89/63/e5adf350c1c3123d4865c013f164c5265512fa79f09ad464fb2fdf9f9e61/pyqt6_sip-13.10.2-cp313-cp313-win_amd64.whl", hash = "sha256:0b097eb58b4df936c4a2a88a2f367c8bb5c20ff049a45a7917ad75d698e3b277", size = 53527, upload-time = "2025-05-23T12:26:42.625Z" },
     { url = "https://files.pythonhosted.org/packages/58/74/2df4195306d050fbf4963fb5636108a66e5afa6dc05fd9e81e51ec96c384/pyqt6_sip-13.10.2-cp313-cp313-win_arm64.whl", hash = "sha256:cc6a1dfdf324efaac6e7b890a608385205e652845c62130de919fd73a6326244", size = 45373, upload-time = "2025-05-23T12:26:43.536Z" },
-]
-
-[[package]]
-name = "python"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "pathspec" },
-    { name = "pyinstaller" },
-    { name = "pyqt6" },
-    { name = "tiktoken" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pathspec", specifier = ">=0.12.1" },
-    { name = "pyinstaller", specifier = ">=6.12.0" },
-    { name = "pyqt6", specifier = ">=6.7.1" },
-    { name = "tiktoken", specifier = ">=0.9.0" },
 ]
 
 [[package]]
