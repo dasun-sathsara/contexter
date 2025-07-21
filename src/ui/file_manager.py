@@ -225,8 +225,6 @@ class FileManager:
                 f"Error: Could not find folder '{os.path.basename(folder_path)}' in tree.",
                 3000,
             )
-            # Maybe navigate back automatically? Or just show empty?
-            # Let's show empty for now, with the '..' item
             self._populate_list([])
             return
 
@@ -351,7 +349,6 @@ class FileManager:
                 self.visual_anchor_row = self.file_list.currentRow()
                 self._update_visual_selection()
         else:
-            # Maybe beep or show status message "Already at root"
             self.set_status_message("Already at root.", 1500)
 
     def enter_visual_mode(self, select_all_below=False):
@@ -487,7 +484,6 @@ class FileManager:
     def _on_token_future_done(self, future: Future):
         """Callback executed when a token counting future completes."""
         if future.cancelled():
-            # print(f"Token count future cancelled.")
             return  # Do nothing if cancelled
 
         try:
@@ -504,20 +500,15 @@ class FileManager:
                 item.set_token_count(token_count)
             elif token_count < 0:
                 print(f"Token counting failed for {path}")
-                # Optionally show error state on the item
+                # Show error state on the item
                 if path in self.added_paths:
                     item = self.added_paths[path]
                     item.token_label.setText("Error")
 
         except CancelledError:
-            # print(f"Token count future cancelled (caught in callback).")
             pass  # Ignore if cancelled
         except Exception as e:
             print(f"Error processing token count result: {e}")
-            # Attempt to remove future if result() failed but key exists
-            # This part is tricky; need to associate future back to path if result fails early
-            # A safer way is to pass path within the callback closure if possible,
-            # or iterate futures dict, but that's less efficient.
 
     def on_selection_changed(self):
         """Handles changes in list widget selection."""
@@ -539,9 +530,6 @@ class FileManager:
                     f"{selected_count} item(s) selected.", 0
                 )  # Persistent message
             else:
-                # Clear message if nothing is selected (unless another persistent message exists)
-                # This needs careful handling not to overwrite important messages.
-                # Maybe only clear if the current message is a selection count message.
                 current_message = (
                     self.status_bar.currentMessage() if self.status_bar else ""
                 )

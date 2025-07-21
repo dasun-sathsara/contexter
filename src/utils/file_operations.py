@@ -177,7 +177,6 @@ class FileTreeBuilder:
         self._gitignore_spec_cache: Dict[
             str, Optional[Any]
         ] = {}  # Cache for PathSpec objects per directory
-        # Clear file type cache at the start of a build? Or assume it's persistent?
         clear_text_file_cache()
 
     def build_tree(self):
@@ -335,8 +334,7 @@ class FileTreeBuilder:
                 print(f"Warning: Cannot access entry '{full_path}': {e}")
                 continue  # Skip problematic entries
 
-        # Sorting is now done once at the end of build_tree() for efficiency
-        # folder_dict["files"].sort()  # Removed: defer sorting until end
+        # Sorting is done once at the end of build_tree() for efficiency
 
         # Determine if this folder should be returned based on content and settings
         if not has_visible_content and self.hide_empty_folders:
