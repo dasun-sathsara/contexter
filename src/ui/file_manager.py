@@ -392,31 +392,40 @@ class FileManager:
 
     def remove_selected_items(self):
         """Removes selected items, updates state, and refreshes the view."""
-        selected_items = self.file_list.selectedItems()
-        if not selected_items:
+        selected_indexes = self.file_list.selectedIndexes()
+        if not selected_indexes:
             self.set_status_message("No items selected to remove.", 1500)
             return
 
-        count = 0
+        # Determine the row to select after deletion.
+        # We'll select the item at the same row as the first deleted item.
+        first_deleted_row = min(index.row() for index in selected_indexes)
+
         paths_to_delete = set()
-        for item in selected_items:
-            # Ensure it's a FileListItem and not the '..' item
+        for index in selected_indexes:
+            item = self.file_list.item(index.row())
             if (
                 isinstance(item, FileListItem)
                 and hasattr(item, "path")
                 and item.path != ".."
             ):
                 paths_to_delete.add(item.path)
-                count += 1
 
         if not paths_to_delete:
             return
 
+        count = len(paths_to_delete)
         self.deleted_paths.update(paths_to_delete)
 
         # Rebuild the tree and refresh the view to reflect deletions
-        # This is crucial for consistency, especially with 'hide empty folders'
         self._rebuild_tree_and_refresh_view()
+
+        # After refresh, restore the selection to the correct position
+        new_count = self.file_list.count()
+        if new_count > 0:
+            # Clamp the selection to the new list bounds
+            row_to_select = min(first_deleted_row, new_count - 1)
+            self.file_list.setCurrentRow(row_to_select)
 
         self.set_status_message(f"Removed {count} item(s).", 2000)
 

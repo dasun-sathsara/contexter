@@ -8,6 +8,11 @@ venv/
 ENV/
 .venv
 
+# Ignore build artifacts
+build/
+dist/
+*.spec
+
 *.txt
 p.md
 .aider*
@@ -15,3 +20,6 @@ p.md
 .ruff_cache
 .git
 prompt.md
+
+# Ignore user settings
+settings.json
