@@ -293,6 +293,10 @@ class FileTreeBuilder:
             if full_path in self.deleted_paths:
                 continue
 
+            # Always ignore .git folders
+            if entry.name == ".git" and entry.is_dir(follow_symlinks=False):
+                continue
+
             if is_ignored(rel_path_for_match, current_spec):
                 continue
 

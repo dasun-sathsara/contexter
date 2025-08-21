@@ -3,9 +3,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, Future, CancelledError
 from typing import Set, Dict, Optional, List, Tuple
 
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtWidgets import QListWidget, QLabel, QStatusBar
+from PyQt6.QtWidgets import QListWidget, QLabel, QStatusBar, QGraphicsOpacityEffect
 
 from src.models.file_list_item import FileListItem
 from src.utils.file_operations import FileTreeBuilder
@@ -134,6 +134,26 @@ class FileManager(QObject):
         self._rebuild_tree_and_refresh_view()
         self.set_status_message(f"Added {len(paths)} root item(s).", 3000)
 
+    def _animate_item_entrance(self, widget):
+        """Add a subtle entrance animation to newly added items."""
+        if not widget:
+            return
+
+        # Create opacity effect
+        opacity_effect = QGraphicsOpacityEffect()
+        widget.setGraphicsEffect(opacity_effect)
+
+        # Create animation
+        animation = QPropertyAnimation(opacity_effect, b"opacity")
+        animation.setDuration(180)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        # Store animation to prevent garbage collection
+        widget._entrance_animation = animation
+        animation.start()
+
     def _rebuild_tree_and_refresh_view(self):
         """Rebuilds the internal file tree and refreshes the list widget view."""
         self._cancel_pending_futures()
@@ -203,6 +223,9 @@ class FileManager(QObject):
                 item = FileListItem(path)
                 self.added_paths[path] = item
                 item_widgets_to_add.append((item, item.content_widget))
+
+                # Add subtle entrance animation
+                self._animate_item_entrance(item.content_widget)
             else:
                 print(f"Skipping non-existent or deleted path during populate: {path}")
 
